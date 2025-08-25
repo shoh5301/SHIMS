@@ -79,7 +79,7 @@ void GGmodule_MPI(int**** grid,double jc[],int dir[],int out[],char ttem0[],doub
 	}
 	if(out[3]<0)
 		puts("    # Simulation will automatically stop when there is no liquid... #");
-	printf("    %d CPUs: MPI activated\n\n",n_size);
+	printf("    %d processes: MPI activated\n\n",n_size);
 	start=clock();
     }
 	srand(time(NULL)+n_rank);
@@ -247,7 +247,7 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 	// [0] == lat_mode,[1] == fit_mode,[2] == T_mode, [3] == P_mode;
 	// P_mode > 0 -> homogeneous phases, so accelerate FDM // P_mode < 0 -> fixed (isothermal)
 	double k_per_cp,Tmax[3],Tinfo[2]={0},dtsave[2]; //dtsave 0 = dtfdm, 1 = prevdt
-	// Tmax 0 == Tmelt, 1 == T_init for solidification, 2 == Tmax for melting, 
+	// Tmax 0 == Tliq, 1 == T_init for solidification, 2 == freezing range
 	// Tinfo 0 = minimum among liquid, 1 = maximum among solid, Pmax 0 for GG, 1 for solidification
 	double Vsite,Asite,fnucl,factor[2]; // factor 0 = g.g. 1 = solid nucl. & growth
 	double pcps[3]; // 0 == pcmax, 1 == psmax, 2 == 1/(pcmax+psmax)
@@ -299,9 +299,9 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 	    melt[6]=dHfus[1];
 
 	//      k    *dt / Cp    * dx^2
-	Tmax[0]=rscale[2];
+	Tmax[0]=rscale[2]; //Tl
 	Tmax[1]=Tmax[0]-rscale[14]; // Critical supercooling
-	Tmax[2]=melt[0]; // maximum in the simulation: ~ superheating limit
+	Tmax[2]=rscale[2]-melt[0]; // freezing range
 
 	// for solidification
 	pcps[0]=Asite*(26*(jc[1]-jc[4])); // heterog. nucleation surrounded by other grains: maximum pc value for "a solid nucleus"
@@ -478,7 +478,7 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 	if(mode[MFIT]==0)
 	    printf("    Growth velocity fitting mode: no nucleation in the simulation...\n");
 
-	printf("    %d CPUs: MPI activated\n\n",n_size);
+	printf("    %d processes: MPI activated\n\n",n_size);
     }
 
 	MPI_Bcast(&mode,4,MPI_INT,0,MPI_COMM_WORLD);
@@ -766,7 +766,7 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 	//      k    *dt / Cp    * dx^2
 	Tmax[0]=rscale[2];
 	Tmax[1]=Tmax[0]-rscale[14]; // Critical supercooling
-	Tmax[2]=melt[0]; // maximum in the simulation: ~ superheating limit
+	Tmax[2]=rscale[2]-melt[0]; // freezing range
 
 	// for solidification
 	pcps[0]=Asite*(26*(jc[1]-jc[4])); // heterog. nucleation surrounded by other grains: maximum pc value for "a solid nucleus"
@@ -936,7 +936,7 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 		printf("    Teardropshaped melt pool\n");
 	if(out[3]<0)
 		puts("    # Simulation will automatically stop when there is no liquid... #");
-	printf("    %d CPUs: MPI activated\n\n",n_size);
+	printf("    %d processes: MPI activated\n\n",n_size);
 
     }
 
@@ -1038,12 +1038,14 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 		    am[9]=0;
 	      }
 	    }
-//printf("rank %d MP done\n",n_rank);
 //	    if(jc[7]!=0) // PTCL introduction
 //		Particle_Form(mpigrid,mpidir,pbc,jc[7]);
 
-	    if(mode[MPRO]>=0)
+	    if(mode[MPRO]>=0){
 		heat_transfer_MPI(mpitgrid,tbc,mpidir,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mpixlen[2]);
+		if(am[9]>Tmax[0])
+		    check_melting(mpigrid,mpitgrid,Tmax[0],mpidir);
+	    }
 
 	    if(mpimode==0){ // former half first, later half second
 		mpix0[1]=1;

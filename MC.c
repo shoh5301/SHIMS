@@ -46,7 +46,7 @@ void MCtrial_SOL(int i,int j,int k,int**** grid,double**** fdmt,int dir[],int pb
 		// NOTE: in principle, it should be considered in any cases for liquid-liquid interaction,
 		//	  but only for T < Tm, for computational efficiency
 		    neworient(tempgrid);
-		    dGfus=solidi_df(dHfus[0],Tnow,1/Tmax[0]); //>0 for prefered reaction
+		    dGfus=solidi_df(dHfus[0],Tnow,Tmax[0],Tmax[2],melt[8]); //>0 for prefered reaction
 
 		  if(jc[7]!=0 && jc[7]>(double)rand()/(RAND_MAX)){ // Nucl. by Particle
 		    dEif=gbenergy(i,j,k,tempgrid,grid,jc,dir,pbc,tbc)-gbenergy(i,j,k,grid[i][j][k],grid,jc,dir,pbc,tbc);
@@ -145,7 +145,7 @@ void MCtrial_SOL(int i,int j,int k,int**** grid,double**** fdmt,int dir[],int pb
 		    if(Tnow<Tmax[1]){ // only consider when tip T < (Tm-Tcs)
 
 			dEif=gbenergy(i,j,k,grid[l][m][n],grid,jc,dir,pbc,tbc)-gbenergy(i,j,k,grid[i][j][k],grid,jc,dir,pbc,tbc);
-			dGfus=solidi_df(dHfus[0],Tnow,1/Tmax[0]); //>0 for prefered reaction
+			dGfus=solidi_df(dHfus[0],Tnow,Tmax[0],Tmax[2],melt[8]); //>0 for prefered reaction
 			dGfor=Asite*dEif-Vsite*dGfus; //<0 for prefered reaction
 //			prob=factor[1]*P_growth(1/Tnow,pcps,dGfus*Vsite,dGfor);
 			prob=factor[1]*P_growth(1/Tnow,pcps,dGfus*Vsite,dGfor)*check_growth_dir(grid,l,m,n,get_nei26_index(l-i,m-j,n-k),dir,pbc,jc[2]);
@@ -283,7 +283,7 @@ double fixed_dt_set(int mcs,int *P_mode,int *fdm_loop,double dtsave[],double dtd
 		*P_mode=0;
 	      }
 	      if(Tinfo[1]==TNOSOLID){ //then no solid in the simulation, so we can ignore
-printf(" @@@ No solid in the simulation... MCS %d @@@",mcs);
+//printf(" @@@ No solid in the simulation... MCS %d @@@",mcs);
 		Pmax[0]=0;
 /*		if(Tinfo[0]==TNOLIQUID){ // SOLID X, LIQUID X -> impossible
 		    Pmax[1]=0;
@@ -293,7 +293,7 @@ printf(" @@@ No solid in the simulation... MCS %d @@@",mcs);
 		    if(Tinfo[0]<=Tmax[0]*KAUZMANN)
 			Pmax[1]=1.0;
 		    else
-			Pmax[1]=P_growth(1/Tinfo[0],pcps,solidi_df(dHfus[0],Tinfo[0],1/Tmax[0])*Vsite,-1.0);
+			Pmax[1]=P_growth(1/Tinfo[0],pcps,solidi_df(dHfus[0],Tinfo[0],Tmax[0],Tmax[2],melt[8])*Vsite,-1.0);
 		}
 	      }else if(Tinfo[0]>=Tmax[1]){ //then no liquid that can be solidified in the simulation, so we can ignore
 		Pmax[1]=0;		// i.e., SOLID O, LIQUID X or > T*
@@ -309,7 +309,7 @@ printf(" @@@ No solid in the simulation... MCS %d @@@",mcs);
 		if(Tinfo[0]<=Tmax[0]*KAUZMANN)
 		    Pmax[1]=1.0;
 		else
-		    Pmax[1]=P_growth(1/Tinfo[0],pcps,solidi_df(dHfus[0],Tinfo[0],1/Tmax[0])*Vsite,-1.0);
+		    Pmax[1]=P_growth(1/Tinfo[0],pcps,solidi_df(dHfus[0],Tinfo[0],Tmax[0],Tmax[2],melt[8])*Vsite,-1.0);
 	      }
 	      rtim=MCS_time_acceleration(dtdMCS,factor,Pmax,out[5]);
 	    }
@@ -339,7 +339,7 @@ printf(" @@@ No solid in the simulation... MCS %d @@@",mcs);
 		if(Tinfo[0]<=Tmax[0]*KAUZMANN)
 		    Pmax[1]=1.0;
 		else
-		    Pmax[1]=P_growth(1/Tinfo[0],pcps,solidi_df(dHfus[0],Tinfo[0],1/Tmax[0])*Vsite,-1.0);
+		    Pmax[1]=P_growth(1/Tinfo[0],pcps,solidi_df(dHfus[0],Tinfo[0],Tmax[0],Tmax[2],melt[8])*Vsite,-1.0);
 		rtim=MCS_time_acceleration(dtdMCS,factor,Pmax,out[5]);
 	    }
 	    dtsave[1]=rtim;
@@ -422,7 +422,7 @@ double active_dt_set(int mcs,int* P_mode,int *fdm_loop,double dtsave[],double dt
 		    if(Tinfo[0]<=Tmax[0]*KAUZMANN)
 			Pmax[1]=1.0;
 		    else
-			Pmax[1]=P_growth(1/Tinfo[0],pcps,solidi_df(dHfus[0],Tinfo[0],1/Tmax[0])*Vsite,-1.0);
+			Pmax[1]=P_growth(1/Tinfo[0],pcps,solidi_df(dHfus[0],Tinfo[0],Tmax[0],Tmax[2],melt[8])*Vsite,-1.0);
 		}
 	      }else if(Tinfo[0]>=Tmax[1]){ //then no liquid that can be solidified in the simulation, so we can ignore
 		Pmax[1]=0;		// i.e., SOLID O, LIQUID X or > T*
@@ -441,7 +441,7 @@ double active_dt_set(int mcs,int* P_mode,int *fdm_loop,double dtsave[],double dt
 			if(Tinfo[0]<=Tmax[0]*KAUZMANN)
 		    Pmax[1]=1.0;
 		else
-		    Pmax[1]=P_growth(1/Tinfo[0],pcps,solidi_df(dHfus[0],Tinfo[0],1/Tmax[0])*Vsite,-1.0);
+		    Pmax[1]=P_growth(1/Tinfo[0],pcps,solidi_df(dHfus[0],Tinfo[0],Tmax[0],Tmax[2],melt[8])*Vsite,-1.0);
 	      }
 	      rtim=MCS_time_acceleration(dtdMCS,factor,Pmax,out[5]);
 	    }
@@ -470,7 +470,7 @@ double active_dt_set(int mcs,int* P_mode,int *fdm_loop,double dtsave[],double dt
 		if(Tinfo[0]<=Tmax[0]*KAUZMANN)
 		    Pmax[1]=1.0;
 		else
-		    Pmax[1]=P_growth(1/Tinfo[0],pcps,solidi_df(dHfus[0],Tinfo[0],1/Tmax[0])*Vsite,-1.0);
+		    Pmax[1]=P_growth(1/Tinfo[0],pcps,solidi_df(dHfus[0],Tinfo[0],Tmax[0],Tmax[2],melt[8])*Vsite,-1.0);
 		rtim=MCS_time_acceleration(dtdMCS,factor,Pmax,out[5]);
 	    }
 	    dtsave[1]=rtim;
@@ -545,8 +545,17 @@ double P_growth(double revT,double pcps[],double ps,double dG){
     return (dG<=0) ? (pcps[0]+ps)*pcps[2] : exp(-dG*REVkB*revT)*pcps[0]*pcps[2];
 }
 
-double solidi_df(double dHfus,double Tnow,double rTmelt){ // rTmelt = 1/Tmelt
-	return dHfus*(1-Tnow*rTmelt); // for pure element
+double solidi_df(double dHfus,double Tnow,double Tliq,double Tfreez,double T0){
+	double Tsol;
+	if(Tfreez==0) // for pure element, no freezing range
+	    return dHfus*(1-Tnow/Tliq);
+	else{
+	    Tsol=Tliq-Tfreez;
+	    if(Tnow<Tsol)
+		return dHfus*(1-Tnow/T0); // assume linear proportional to T, where df=0 at T0
+	    else
+		return dHfus*(1-Tsol/T0)*(Tliq-Tnow)/Tfreez;
+	}
 }
 
 void heat_transfer(double**** tgrid,double tbc[][2],int dir[],int pbc[],double mcdx,double const melt[],int fdm_loop,double k_per_cp,double Tmelt,int mode){ //,double dHfus){
@@ -894,7 +903,7 @@ void MeltPool(int**** grid,double**** tgrid,double am[],double mp[],int dir[],in
 	    ymax=deter((int)(pos[1]+am[3]),dir[1],0);
 	    y=deter((int)(pos[1]-am[3]),dir[1],0);
 
-	  if(mp[0]==0){ // 1st mcs
+/*	  if(mp[0]==0){ // 1st mcs // Arbitrary asume a primarily formed melt pool, for comput. efficiency
 	    k=dir[2]-1;
 	    for(i=xmax;i>=x;i--){
 		temp=am[3]*sqrt(1-(double)((i-pos[0])*(i-pos[0]))/(am[2]*am[2]));
@@ -904,10 +913,10 @@ void MeltPool(int**** grid,double**** tgrid,double am[],double mp[],int dir[],in
 			if(grid[i][j][k][0]!=MPISURF && grid[i][j][k][0]!=PTCLORI)
 			    neworient_melting(grid[i][j][k]);
 //			    tgrid[2][i][j][k]-=dH; //dH == dHfus[1]
-		    } // */
+		    } //
 		}
 	    }
-	  }
+	  }*/
 	    for(i=xmax;i>=x;i--){
 		for(j=ymax;j>=y;j--){
 		    // 2D gaussian
@@ -917,7 +926,7 @@ void MeltPool(int**** grid,double**** tgrid,double am[],double mp[],int dir[],in
 		    }*/
 		}
 	    }
-	    for(i=xmax;i>=x;i--){
+/*	    for(i=xmax;i>=x;i--){
 		for(j=ymax;j>=y;j--){
 		    for(k=dir[2]-1;k>=0;k--){
 			if(tgrid[0][i][j][k]>=Tm && grid[i][j][k][0]!=LIQORI){
@@ -927,7 +936,7 @@ void MeltPool(int**** grid,double**** tgrid,double am[],double mp[],int dir[],in
 			} //
 		    }
 		}
-	    }
+	    }*/
 	}else if(am[0]==0){ // Teardrop shaped Melt pool
 	    if(am[9]<Tm) // MP boundary temperature < Tmax[0]
 		mode=1;
@@ -1017,6 +1026,22 @@ void MeltPool(int**** grid,double**** tgrid,double am[],double mp[],int dir[],in
 
 int teardrop(double b, double t,int geo){  // Melt pool shape curve
 return (int)(b*sin(t)*(pow(sin(t/2),geo)));
+}
+
+void check_melting(int**** grid,double**** tgrid,double Tm,int dir[]){
+	int i,j,k;
+	for(i=dir[0]-1;i>=0;i--){
+	    for(j=dir[1];j>=0;j--){
+		for(k=dir[2];k>=0;k--){
+		    if(tgrid[0][i][j][k]>=Tm && grid[i][j][k][0]!=LIQORI){
+			if(grid[i][j][k][0]!=MPISURF && grid[i][j][k][0]!=PTCLORI)
+			    neworient_melting(grid[i][j][k]);
+		    }
+		}
+	    }
+	}
+
+	return;
 }
 
 void Particle_Form(int**** grid,int dir[],int pbc[],double fraction){
@@ -1156,5 +1181,4 @@ double check_growth_dir(int**** grid,int l,int m,int n,int vector,int dir[],int 
 	else
 	    return factor;
 }
-
 

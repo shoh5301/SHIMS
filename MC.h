@@ -17,11 +17,12 @@ double active_dt_set(int mcs,int* P_mode,int *fdm_loop,double dtsave[],double dt
 double P_grain_growth(double Q,double revTm,double revT,double dx2,double dG);
 double P_nucl(double revT,double dGfus,double gam,double factor,double Nc,double dG,double pcps[],double ps);
 double P_growth(double revT,double pcps[],double ps,double dG);
-double solidi_df(double dHfus,double Tnow,double rTmelt);
+double solidi_df(double dHfus,double Tnow,double Tliq,double Tfreez,double T0);
 void heat_transfer(double**** tgrid,double tbc[][2],int dir[],int pbc[],double mcdx,double const melt[],int fdm_loop,double k_per_cp,double Tmelt,int mode);//,double dHfus){
 void MeltPool_movement(double pos[],double direction,double displ);
 void MeltPool(int**** grid,double**** tgrid,double am[],double mp[],int dir[],int pbc[],double Tm,double dH,double pos[]);
 int teardrop(double b, double t,int geo); // Melt pool shape curve
+void check_melting(int**** grid,double**** tgrid,double Tm,int dir[]);
 void Particle_Form(int**** grid,int dir[],int pbc[],double fraction);
 void LatHeatDiffus(double* T,double *L,double dT);
 double check_growth_dir(int**** grid,int l,int m,int n,int vector,int dir[],int pbc[],double factor);

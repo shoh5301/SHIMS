@@ -1163,13 +1163,13 @@ void datout(int dir[],int**** grid,int mcs,int out[],double const realtime[],dou
 				fprintf(list,"    f_liquid\n");
 			else
 				fprintf(list,"\n");
-			fprintf(list,"%4d\t %s\t\t%12.3E    %14.3f",mcs,info,realtime[0],realtime[3]*avg);
+			fprintf(list,"%4d\t %s\t\t%12.3E    %14.1E",mcs,info,realtime[0],realtime[3]*avg);
 		}else
 			fprintf(list,"\n%4d\t %s",mcs,info);
 	}else{
 		list=fopen("result.dat","a");
 		if(rt!=0) // Real-time fitting
-			fprintf(list,"%4d\t %s\t\t%12.3E    %14.3f",mcs,info,realtime[0],realtime[3]*avg);
+			fprintf(list,"%4d\t %s\t\t%12.3E    %14.1E",mcs,info,realtime[0],realtime[3]*avg);
 		else
 			fprintf(list,"%4d\t %s",mcs,info);
 	}
@@ -1809,14 +1809,25 @@ void IFposition(int**** const grid,int dir[],int cor,int start){ // find S-L int
 		// STDEV
 		for(k=0;k<dir[2];k++){
 		    for(j=0;j<dir[1];j++){
+		      if(cor>0){ // solid grows to + direction
 			for(i=dir[0]-1;i>=0;i--){
-			    if(grid[i][j][k][0]!=LIQORI){
-				sum[1]+=(sum[0]-i)*(sum[0]-i);
+			    if(grid[i][j][k][0]!=LIQORI)
 				break;
-			    }
 		    	}
-			if(i<0) // No liquid at that line
-				sum[1]+=sum[0]*sum[0];
+			if(i<0)// No solid at that line
+			    sum[1]+=sum[0]*sum[0];
+			else
+			    sum[1]+=((sum[0]-i)*(sum[0]-i));
+		      }else{
+			for(i=0;i<dir[0];i++){
+			    if(grid[i][j][k][0]!=LIQORI)
+				break;
+		    	}
+			if(i==dir[0]) // No solid at that line
+			    sum[1]+=sum[0]*sum[0];
+			else
+			    sum[1]+=((sum[0]-i)*(sum[0]-i));
+		      }
 		    }
 		}
 		sum[1]=sqrt(sum[1]/(double)(dir[1]*dir[2])); // stdev.

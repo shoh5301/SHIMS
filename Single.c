@@ -81,6 +81,7 @@ void GGmodule(int**** grid,double jc[],int dir[],int out[],char ttem0[],double m
 //			     dx^2 / (K T)
 			pmob=factor*exp(-rscale[3]*(1/realt-1/Tmelt)*REVRGAS);
 //					Q  * (1/T-1/Tm)  / R
+//printf("realE %E pmob %E factor %E\n",realE,pmob,factor);
 		}
 		mcs++;
 		step=total;
@@ -154,7 +155,7 @@ void SOLmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pb
 	// [0] == lat_mode,[1] == fit_mode,[2] == T_mode, [3] == P_mode;
 	// P_mode > 0 -> homogeneous phases, so accelerate FDM // P_mode < 0 -> fixed (isothermal)
 	double k_per_cp,Tmax[3],Tinfo[2]={0},dtsave[2]; //dtsave 0 = dtfdm, 1 = prevdt
-	// Tmax 0 == Tmelt, 1 == T_init for solidification, 2 == Tmax for melting, 
+	// Tmax 0 == T_liq, 1 == T_init for solidification, 2 == freezing ragne
 	// Tinfo 0 = minimum among liquid, 1 = maximum among solid, Pmax 0 for GG, 1 for solidification
 	double Vsite,Asite,fnucl,factor[2]; // factor 0 = g.g. 1 = solid nucl. & growth
 	double pcps[3]; // 0 == pcmax, 1 == psmax, 2 == 1/(pcmax+psmax)
@@ -206,9 +207,9 @@ void SOLmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pb
 		melt[6]=dHfus[1];
 
 	//      k    *dt / Cp    * dx^2
-	Tmax[0]=rscale[2];
+	Tmax[0]=rscale[2]; // Tliq
 	Tmax[1]=Tmax[0]-rscale[14]; // Critical supercooling
-	Tmax[2]=melt[0]; // maximum in the simulation: ~ superheating limit
+	Tmax[2]=rscale[2]-melt[0]; // Tsol
 
 	// for solidification
 	pcps[0]=Asite*(26*(jc[1]-jc[4])); // heterog. nucleation surrounded by other grains: maximum pc value for "a solid nucleus"
@@ -375,7 +376,8 @@ void SOLmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pb
 		dmc[2]--;
 		if(dmc[2]==0){ // time OPT
 		    dmc[2]=out[6];
-		    rtim[1]=active_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt);
+		    rtim[1]=fixed_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt);
+//		    rtim[1]=active_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt);
 		}
 		if(rtim[1]<0){
 		    printf(" @@@ Liquid fraction is 0, solidification is DONE @@@\n");
@@ -524,7 +526,7 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 	//      k    *dt / Cp    * dx^2
 	Tmax[0]=rscale[2];
 	Tmax[1]=Tmax[0]-rscale[14]; // Critical supercooling
-	Tmax[2]=melt[0]; // maximum in the simulation: ~ superheating limit
+	Tmax[2]=rscale[2]-melt[0]; // Tsol
 
 	// for solidification
 	pcps[0]=Asite*(26*(jc[1]-jc[4])); // heterog. nucleation surrounded by other grains: maximum pc value for "a solid nucleus"
@@ -756,9 +758,11 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 
 //	    if(jc[7]!=0) // PTCL introduction
 //		Particle_Form(grid,dir,pbc,jc[7]);
-
-	    heat_transfer(fdmt,tbc,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mode[MPRO]); // Loop inside the function
-
+	    if(mode[MPRO]>=0){
+		heat_transfer(fdmt,tbc,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mode[MPRO]); // Loop inside the function
+		if(am[9]>Tmax[0])
+		    check_melting(grid,fdmt,Tmax[0],dir);
+	    }
 	    mcs++;
 	    step=total;
 //printf("MCS %d\n",mcs);
@@ -777,7 +781,8 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 		dmc[2]--;
 		if(dmc[2]==0){ // time OPT
 		    dmc[2]=out[6];
-		    rtim[1]=active_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt);
+		    rtim[1]=fixed_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt);
+//		    rtim[1]=active_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt);
 		}
 		if(rtim[1]<0){
 		    printf(" @@@ Liquid fraction is 0, solidification is DONE @@@\n");

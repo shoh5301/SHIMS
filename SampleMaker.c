@@ -6,9 +6,9 @@ void gmake(int dir[],int**** grid){// Grain maker module
 	int* nsd=NULL;
 	int**** tgrid=NULL;
 	int**** tgrid2=NULL;
-	char fnam[30],fnam2[3];
+	char fnam[100],fnam2[100];
 
-	printf("\nEdit mode? (1 = Make new / 2 = Multiplier / 3 = Crop / 4 = Combine / 5 = Rotate // 0 = Quit )\n >> ");
+	printf("\nEdit mode? (1 = Make new / 2 = Multiply / 3 = Crop / 4 = Merge / 5 = Rotate // 0 = Quit )\n >> ");
 	scanf("%d",&mode);
 
 	srand(time(NULL));
@@ -68,16 +68,18 @@ else if(mode==5){	// Rotater
 	return;
 
 }else if(mode==4){  // Paster
-	printf("\nInput file name of 1st file\n");
+	printf("\nInput file name of 1st file");
 	i=get_file(fnam,0);
 	if(i==0)
 		return;
-	printf("\n1st file confirmed...\nPlease input 2nd file\n");
+	printf("\n1st file confirmed...\nPlease input 2nd file");
 	i=get_file(fnam2,0);
 	if(i==0)
 		return;
+	printf("\n Merge '%s' and '%s'...\n",fnam,fnam2);
+
 	while(1){
-		printf("\nWhat is the direction to attach 2nd file?\n(x = 1, y = 2, z = 3)\n >> ");
+		printf("What is the direction to attach 2nd file?\n(x = 1, y = 2, z = 3)\n >> ");
 		scanf("%d",&orient);
 		if(orient<1||orient>3)
 			printf("Wrong input...\n\n");
@@ -247,14 +249,15 @@ else if(mode==5){	// Rotater
 	grid=free4d(dir[0],dir[1],dir[2],grid);
 	return;
     }else if(mode==1){	// Maker
-	printf("\nSample size (x direction, sites)?: ");
+	printf("\nSample size (x direction, voxels)?: ");
 	scanf("%d",&dir[0]);
-	printf("Sample size (y direction, sites)?: ");
+	printf("Sample size (y direction, voxels)?: ");
 	scanf("%d",&dir[1]);
-	printf("Sample size (z direction, sites)?: ");
+	printf("Sample size (z direction, voxels)?: ");
 	scanf("%d",&dir[2]);
 
-	printf("\nSpecial sample? (0 = No, 1 = Liquid, 2 = Mould-liquid, 3 = Powder, 4 = single nucleus among liquid)\n >> ");
+	printf("\nSample type? (0 = Solid, 1 = Liquid, 2 = Mould-liquid, 3 = Powder)\n >> ");
+//	, 4 = single nucleus among liquid)\n >> ");
 	scanf("%d",&gnum[0]);
 
 	if(gnum[0]!=0)
@@ -435,15 +438,28 @@ void initial_size_setting(int gnum[],int dir[]){
 	int i,sn;
 
 	if(gnum[0]==3) // Powder
-	    printf("\nSize of powder particles? (initial condition, 1 grain takes Nx x Ny x Nz sites // 0 for liquid)\n Nx = ");
+	    printf("\nSize of powder particles? (1 powder particle will take Nx x Ny x Nz voxels)\n Nx = ");
 	else
-	    printf("\nSize of random grains? (initial condition, 1 grain takes Nx x Ny x Nz sites // 0 for liquid)\n Nx = ");
+	    printf("\nSize of initial grains? (1 grain will take Nx x Ny x Nz voxels)\n Nx = ");
 
 	    scanf("%d",&gnum[0]);
+	    if(gnum[0]==0){
+		printf(" ### WARNING: initial size should not be 0...\n     Automatically set to 1\n");
+		gnum[0]=1;
+	    }
 	    printf(" Ny = ");
 	    scanf("%d",&gnum[1]);
+	    if(gnum[1]==0){
+		printf(" ### WARNING: initial size should not be 0...\n     Automatically set to 1\n");
+		gnum[1]=1;
+	    }
 	    printf(" Nz = ");
 	    scanf("%d",&gnum[2]);
+	    if(gnum[2]==0){
+		printf(" ### WARNING: initial size should not be 0...\n     Automatically set to 1\n");
+		gnum[2]=1;
+	    }
+
 	    i=0;
 	    sn=dir[0]%gnum[0];
 	    if(sn!=0){

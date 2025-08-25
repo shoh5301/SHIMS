@@ -22,7 +22,7 @@ void graphout(int mode,int out[],int dir[],int melt,double rscale[],double froze
 			i=gnu_plot(tgrid,fnam,dir,0);
 			tgrid=free4d(dir[0],dir[1],dir[2],tgrid);
 		}
-		if(mode==2 || rscale[0]!=0 && frozen>=0){  // Draw Tmap
+		if(mode==2 || rscale[0]!=0 && rscale[0]!=3 && frozen>=0){  // Draw Tmap
 			printf("\nDraw T distribution? (GNUPLOT program is required, y=1 / n=0)\n >> ");
 			scanf("%d",&n);
 
@@ -55,9 +55,18 @@ void graphout(int mode,int out[],int dir[],int melt,double rscale[],double froze
 	}else{		// Load sample & draw graph
 		while(1){
 			while(1){
-printf(" Which module? (1 to draw grain map / 2 to draw T map / 3 to measure grain size ");
-printf("/ 4 to measure interface position / 5 to calculate PDAS / 6 to calculate avg. T ");
-printf("/ 7 to measure fraction of orientations / 8 to convert .dat (into .vtk) / 9 to convert .tdat (into .vtk) / 0 to quit \n");
+printf("\n\
+  Which module?\n\
+      1 = Visualize grain morphology\n\
+      2 = Visualize temperature field\n\
+      3 = Calculate avg. grain size\n\
+      4 = Calculate interface position\n\
+      5 = Calculate PDAS (column thickness)\n\
+      6 = Calculate avg. temperature\n\
+      7 = Analyze oriention fraction\n\
+      8 = Convert \".dat\" file into \".vtk\" file\n\
+      9 = Convert \".tdat\" file into \".vtk\" file\n\
+      0 = Return to main menu...\n");
 // / 5 to draw texture pole figure / 0 to quit)\n);
 
 				printf(" * NOTICE : the script was based on GNUPLOT 4.6 ver. ...\n >> ");
