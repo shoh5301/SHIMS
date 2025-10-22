@@ -7,7 +7,7 @@
 #include "Utility.h"
 #include "Calc.h"
 
-int ver=172;
+int ver=174;
 int n_size;
 int n_rank;
 
@@ -30,11 +30,11 @@ int main(int argc,char** argv){
 // out 0 = total -> real total, 1 = step to print map 2 = AGI lines 3 = criteria for ending simul. (sec = 1 vs MCS = 0), 4 = step to print data
 //     5 = Timestep Acceleartion scheme (0, 1, 2), 6 = step to do active dt setting, 7 = Liquid fraction criteria? (1 == Yes // 0 == No)
 	char func,ttem[100]={'\0'};
-	double sang[11]={0},tbc[6][2]={0},jc[9]={0},melt[9]={0},rscale[15]={0},am[10]={0};
+	double sang[11]={0},tbc[6][2]={0},jc[9]={0},melt[9]={0},rscale[15]={0},am[11]={0};
 	// am 0 = Melt pool mode (-1 = Circle, 0 = TEARDROP,  1 = Gaussian) 
 	// 1 = Melt pool direction (negative -> X, positive -> Y)
 	// Start position (x = 6, y = 7), 8 = scan speed
-	// when am[0]==-1: 2 = Radius                      4 = Depth                                9 = Boundary Temperature
+	// when am[0]==-1: 2 = Radius                      4 = Depth                                9 = Boundary Temperature // 11 = gradient in MP
 	// when am[0]==0:  2 = Width  3 = Cap+Tail length  4 = Depth  5 = Geometry (Teardrop shape) 9 = Boundary Temperature
 	// when am[0]==1:  2 = SX     3 = SY               4 = SZ    5 = POW  9 = ABS    (Gaussian)
 	// jc 0=EMPTY // 1 = GBEmax // 2 = IFE_aniso factor // 3=C(low angle boundary,degree) // 4=solid/liquid interface energy(J/m2) // 5=solid-vapor IFE (J/m2) // 6=liquid-vapor IFE 
@@ -112,7 +112,7 @@ int main(int argc,char** argv){
 		MPI_Bcast(jc,9,MPI_DOUBLE,0,MPI_COMM_WORLD);
 		MPI_Bcast(rscale,15,MPI_DOUBLE,0,MPI_COMM_WORLD);
 		MPI_Bcast(melt,9,MPI_DOUBLE,0,MPI_COMM_WORLD);
-		MPI_Bcast(am,10,MPI_DOUBLE,0,MPI_COMM_WORLD);
+		MPI_Bcast(am,11,MPI_DOUBLE,0,MPI_COMM_WORLD);
 		MPI_Bcast(ttem,100,MPI_CHAR,0,MPI_COMM_WORLD);
 		MPI_Bcast(&func,1,MPI_CHAR,0,MPI_COMM_WORLD);
 		for(i=0;i<6;i++){
@@ -246,6 +246,7 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 	    return 1;
 	}
 
+// COMMON INPUT OPTIONS
 	if(find_keyword(incar,"STR",option)!=0){ // ==0 when there is no error
 		printf(" INPUT FILE ERROR in reading 'STR' option... \n");
 		fclose(incar);
@@ -253,16 +254,6 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 	}else
 	    tok(option,str);
 
-	if(find_keyword(incar,"REAL",option)!=0){ // ==0 when there is no error
-		printf(" INPUT FILE ERROR in reading 'REAL' option... \n");
-		fclose(incar);
-		return 1;
-	}
-	if(option[0]=='Y' || option[0]=='y')
-		rscale[0]=1;  // full-scale MC with time conversion
-	else
-		rscale[0]=0;  // No realistic time assignment
-	
 	if(find_keyword(incar,"MODE",option)!=0){ // ==0 when there is no error
 		printf(" INPUT FILE ERROR in reading 'MODE' option... \n");
 		fclose(incar);
@@ -273,14 +264,22 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 	else if(option[0]=='A' || option[0]=='a') // AM module
 		rscale[0]=2;
 	else if(option[0]=='G' || option[0]=='g'){ // GG module
-		if(rscale[0]!=0)
-		    rscale[0]=3;
-	}else{
+		if(find_keyword(incar,"REAL",option)!=0){ // ==0 when there is no error
+		    printf(" INPUT FILE ERROR in reading 'REAL' option... \n");
+		    fclose(incar);
+		    return 1;
+		}
+		if(option[0]=='Y' || option[0]=='y')
+		    rscale[0]=3;  // full-scale MC with time conversion
+		else
+		    rscale[0]=0;  // No realistic time assignment
+	}else if(option[0]=='S' || option[0]=='s')
+		rscale[0]=4;
+	else{
 		printf(" INPUT ERROR for 'MODE' option... \n");
 		fclose(incar);
 		return 1;
 	}
-
 
 	if(find_keyword(incar,"MDB",option)!=0){ // ==0 when there is no error
 		printf(" INPUT FILE ERROR in reading 'MDB' option... \n");
@@ -378,178 +377,6 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 		}
 	}
 
-	if(rscale[0]==0){//melt[1]!=0){ // No real time conversion case
-	    printf("### NOTE: heat transfer model requires real time conversion...\n          Automatically disabled...\n ");
-	    melt[2]=0;
-	}else if(rscale[0]!=3){
-	    if(find_keyword(incar,"FDM",option)!=0){ // ==0 when there is no error
-		printf(" INPUT FILE ERROR in reading 'FDM' option... \n");
-		fclose(incar);
-		return 1;
-	    }
-	    if(option[0]=='Y' || option[0]=='y')
-		melt[2]=1;
-	    else
-		melt[2]=0;
-	    if(melt[2]==0&&rscale[0]==2){
-		printf(" ### ERROR: AM module requires FDM option ON... ###\n");
-		fclose(incar);
-		return 1;
-	    }
-/*		if(find_keyword(incar,"FACL",option)!=0) // ==0 when there is no error
-		    melt[7]=1;
-		else{
-		    melt[7]=atof(option);
-		    if(melt[7]!=floor(melt[7])){
-			printf(" INPUT ERROR for 'FACL' option... \n");
-			fclose(incar);
-			return 1;
-		    }
-		}*/
-	    melt[7]=1;
-
-// NUCLEATION option ON or OFF
-	    if(find_keyword(incar,"NUCL",option)!=0) // ==0 when there is no error
-		rscale[11]=1;
-	    else{
-		if(option[0]=='Y' || option[0]=='y')
-		    rscale[11]=1;
-		else
-		    rscale[11]=0;
-	    }
-	}
-
-	if(melt[2]!=0){ // solving heat transfer equation
-	    if(strcmp(option,"111")==0){
-		printf("### ERROR: at least ONE SURFACE must exist for solving heat transfer problem...!\n\n");
-		fclose(incar);
-		return 1;
-	    }
-	    melt[1]=FDMSAFE*0.5*rscale[1]*rscale[1]*melt[4]/(rscale[9]*melt[3]); // dt for FDM
-//		printf(" # NOTE: FDM grid point locates at the center of each MC voxels...\n");
-//		printf("\n # dt for FDM is %E sec (safe factor %.3f)\n",melt[1],FDMSAFE);
-	    if(find_keyword(incar,"T0",option)!=0){ // ==0 when there is no error
-		printf(" INPUT FILE ERROR in reading 'T0' option... \n");
-		fclose(incar);
-		return 1;
-	    }
-	    tok(option,temp);
-	    if(is_valid_digits(temp))
-		melt[2]=atof(temp);
-	    else
-		melt[2]=-1; // loading will be done in SOL module
-	    if(set_bc(incar,pbc,tbc,rscale[11])!=0){
-		fclose(incar);
-		return 1;
-	    }
-
-// WETTING ANGLE
-	    if(tbc[0][0]>=0){
-		if(set_wetting(incar,&tbc[0][1],"WXL",rscale[11])!=0){
-		    fclose(incar);
-		    return 1;
-		}
-	    }
-	    if(tbc[1][0]>=0){
-		if(set_wetting(incar,&tbc[1][1],"WXU",rscale[11])!=0){
-		    fclose(incar);
-		    return 1;
-		}
-	    }
-	    if(tbc[2][0]>=0){
-		if(set_wetting(incar,&tbc[2][1],"WYL",rscale[11])!=0){
-		    fclose(incar);
-		    return 1;
-	    }
-		}
-	    if(tbc[3][0]>=0){
-		if(set_wetting(incar,&tbc[3][1],"WYU",rscale[11])!=0){
-		    fclose(incar);
-		    return 1;
-	    }
-		}
-	    if(tbc[4][0]>=0){
-		if(set_wetting(incar,&tbc[4][1],"WZL",rscale[11])!=0){
-		    fclose(incar);
-		    return 1;
-	    }
-		}
-	    if(tbc[5][0]>=0){
-		if(set_wetting(incar,&tbc[5][1],"WZU",rscale[11])!=0){
-		    fclose(incar);
-		    return 1;
-		}
-	    }
-
-	}else{ // no heat transfer
-	    if(find_keyword(incar,"FROZ",option)==0 && (option[0]=='Y' || option[0]=='y')){
-		if(find_keyword(incar,"TINT",option)!=0){ // ==0 when there is no error
-		    printf(" INPUT FILE ERROR in reading 'TINI' option... \n");
-		    fclose(incar);
-		    return 1;
-		}
-		tok(option,temp);
-		melt[3]=-1*atof(temp);
-		if(find_keyword(incar,"TGRA",option)!=0){ // ==0 when there is no error
-		    printf(" INPUT FILE ERROR in reading 'TGRA' option... \n");
-		    fclose(incar);
-		    return 1;
-		}
-		tok(option,temp);
-		melt[4]=atof(temp);
-	    }else{ // NO FDM, NO FROZEN T APPROX. -> ISOTHERMAL ASSUMPTION
-		i=0;
-		while(++i){ // RANGE
-		    sprintf(temp,"t(%d)",i);
-		    if(find_keyword(incar,temp,option)!=0){ // ==0 when there is no error
-			if(i==1){
-			    printf(" INPUT FILE ERROR in reading '%s' option... \n",temp);
-			    fclose(incar);
-			    return 1;
-			}else
-			    break;
-		    }
-		    tok(option,temp2);
-		    if(is_valid_digits(temp2)){
-			if(i==1)
-			    strcpy(ttem,temp2);
-			else
-			    sprintf(ttem,"%s %s",ttem,temp2);
-		    }else{
-			printf(" INPUT ERROR for '%s' option... \n",temp);
-			fclose(incar);
-			return 1;
-		    }
-		    // EQUATION
-		    sprintf(temp,"T(%d)",i);
-		    if(find_keyword(incar,temp,option)!=0){ // ==0 when there is no error
-			printf(" INPUT FILE ERROR in reading '%s' option... \n",temp);
-			fclose(incar);
-			return 1;
-		    }
-		    tok(option,temp2);
-		    Etodec(temp2);
-		    sprintf(ttem,"%s %s",ttem,temp2);
-		}
-
-		if(find_keyword(incar,"tUNIT",option)!=0){ // ==0 when there is no error
-		    printf(" INPUT FILE ERROR in reading 'tUNIT' option... \n");
-		    fclose(incar);
-		    return 1;
-		}
-		strcpy(temp,ttem);
-		if(option[0]=='M' || option[0]=='m') // in MCS
-		    sprintf(ttem,"0 %s",temp);
-		else if(option[0]=='S' || option[0]=='s')
-		    sprintf(ttem,"1 %s",temp);
-		else{ // unit is neither MCS nor sec
-		    printf(" INPUT ERROR for 'tUNIT' option unit...\n");
-		    fclose(incar);
-		    return 1;
-		}
-	    }
-	}
-
 	if(rscale[0]==0)
 	    out[3]=0;
 	else{
@@ -620,19 +447,188 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 	    fclose(incar);
 	    return 1;
 	}
-// Additional information for each module
-	//if(melt[2]==0&&melt[3]>=0){ // GG module
-	if(rscale[0]==0) // No acceleration
-	    melt[1]=1.0;
 
-	if(rscale[0]==3){
+    if(rscale[0]==0 || rscale[0]==3){
+	if(rscale[0]==0){ // GG, no realistic scalea
+	    printf("### NOTE: heat transfer model requires real time conversion...\n          Automatically disabled...\n ");
+	    melt[2]=0;
+	    melt[1]=1.0;
+	}else{ // GG, full-scale
 	    if(find_keyword(incar,"ACCL",option)!=0) // ==0 when there is no error
 		melt[1]=1.0;
 	    else{
 		tok(option,temp);
 		melt[1]=atof(temp);
 	    }
-	}else{ // SOL module & AM module
+	}
+	i=0;
+	while(++i){ // RANGE
+	    sprintf(temp,"t(%d)",i);
+	    if(find_keyword(incar,temp,option)!=0){ // ==0 when there is no error
+		if(i==1){
+		    printf(" INPUT FILE ERROR in reading '%s' option... \n",temp);
+		    fclose(incar);
+		    return 1;
+		}else
+		    break;
+	    }
+	    tok(option,temp2);
+	    if(is_valid_digits(temp2)){
+		if(i==1)
+		    strcpy(ttem,temp2);
+		else
+		    sprintf(ttem,"%s %s",ttem,temp2);
+		    }else{
+		printf(" INPUT ERROR for '%s' option... \n",temp);
+		fclose(incar);
+		return 1;
+	    }
+	    // EQUATION
+	    sprintf(temp,"T(%d)",i);
+	    if(find_keyword(incar,temp,option)!=0){ // ==0 when there is no error
+		printf(" INPUT FILE ERROR in reading '%s' option... \n",temp);
+		fclose(incar);
+		return 1;
+	    }
+	    tok(option,temp2);
+	    Etodec(temp2);
+	    sprintf(ttem,"%s %s",ttem,temp2);
+	}
+
+	if(find_keyword(incar,"tUNIT",option)!=0){ // ==0 when there is no error
+	    printf(" INPUT FILE ERROR in reading 'tUNIT' option... \n");
+	    fclose(incar);
+	    return 1;
+	}
+	strcpy(temp,ttem);
+	if(option[0]=='M' || option[0]=='m') // in MCS
+	    sprintf(ttem,"0 %s",temp);
+	else if(option[0]=='S' || option[0]=='s')
+	    sprintf(ttem,"1 %s",temp);
+	else{ // unit is neither MCS nor sec
+	    printf(" INPUT ERROR for 'tUNIT' option unit...\n");
+	    fclose(incar);
+	    return 1;
+	}
+    }else{ // SOL & AM module
+	    if(find_keyword(incar,"FDM",option)!=0){ // ==0 when there is no error
+		printf(" INPUT FILE ERROR in reading 'FDM' option... \n");
+		fclose(incar);
+		return 1;
+	    }
+	    if(option[0]=='Y' || option[0]=='y')
+		melt[2]=1;
+	    else
+		melt[2]=0;
+	    if(melt[2]==0&&rscale[0]==2){
+		printf(" ### ERROR: AM module requires FDM option ON... ###\n");
+		fclose(incar);
+		return 1;
+	    }
+/*		if(find_keyword(incar,"FACL",option)!=0) // ==0 when there is no error
+		    melt[7]=1;
+		else{
+		    melt[7]=atof(option);
+		    if(melt[7]!=floor(melt[7])){
+			printf(" INPUT ERROR for 'FACL' option... \n");
+			fclose(incar);
+			return 1;
+		    }
+		}*/
+	    melt[7]=1;
+
+// NUCLEATION option ON or OFF
+	    if(find_keyword(incar,"NUCL",option)!=0) // ==0 when there is no error
+		rscale[11]=1;
+	    else{
+		if(option[0]=='Y' || option[0]=='y')
+		    rscale[11]=1;
+		else
+		    rscale[11]=0;
+	    }
+
+	if(melt[2]!=0){ // solving heat transfer equation
+	    if(strcmp(option,"111")==0){
+		printf("### ERROR: at least ONE SURFACE must exist for solving heat transfer problem...!\n\n");
+		fclose(incar);
+		return 1;
+	    }
+	    melt[1]=FDMSAFE*0.5*rscale[1]*rscale[1]*melt[4]/(rscale[9]*melt[3]); // dt for FDM
+//		printf(" # NOTE: FDM grid point locates at the center of each MC voxels...\n");
+//		printf("\n # dt for FDM is %E sec (safe factor %.3f)\n",melt[1],FDMSAFE);
+	    if(find_keyword(incar,"T0",option)!=0){ // ==0 when there is no error
+		printf(" INPUT FILE ERROR in reading 'T0' option... \n");
+		fclose(incar);
+		return 1;
+	    }
+	    tok(option,temp);
+	    if(is_valid_digits(temp))
+		melt[2]=atof(temp);
+	    else
+		melt[2]=-1; // loading will be done in SOL module
+	    if(set_bc(incar,pbc,tbc,rscale[11])!=0){
+		fclose(incar);
+		return 1;
+	    }
+
+// WETTING ANGLE
+	    if(tbc[0][0]>=0){
+		if(set_wetting(incar,&tbc[0][1],"WXL",rscale[11])!=0){
+		    fclose(incar);
+		    return 1;
+		}
+	    }
+	    if(tbc[1][0]>=0){
+		if(set_wetting(incar,&tbc[1][1],"WXU",rscale[11])!=0){
+		    fclose(incar);
+		    return 1;
+		}
+	    }
+	    if(tbc[2][0]>=0){
+		if(set_wetting(incar,&tbc[2][1],"WYL",rscale[11])!=0){
+		    fclose(incar);
+		    return 1;
+	    }
+		}
+	    if(tbc[3][0]>=0){
+		if(set_wetting(incar,&tbc[3][1],"WYU",rscale[11])!=0){
+		    fclose(incar);
+		    return 1;
+	    }
+		}
+	    if(tbc[4][0]>=0){
+		if(set_wetting(incar,&tbc[4][1],"WZL",rscale[11])!=0){
+		    fclose(incar);
+		    return 1;
+	    }
+		}
+	    if(tbc[5][0]>=0){
+		if(set_wetting(incar,&tbc[5][1],"WZU",rscale[11])!=0){
+		    fclose(incar);
+		    return 1;
+		}
+	    }
+
+	}else{ // no heat transfer
+	    if(find_keyword(incar,"FROZ",option)==0 && (option[0]=='Y' || option[0]=='y')){
+		if(find_keyword(incar,"TINT",option)!=0){ // ==0 when there is no error
+		    printf(" INPUT FILE ERROR in reading 'TINT' option... \n");
+		    fclose(incar);
+		    return 1;
+		}
+		tok(option,temp);
+		melt[3]=-1*atof(temp);
+		if(find_keyword(incar,"TGRA",option)!=0){ // ==0 when there is no error
+		    printf(" INPUT FILE ERROR in reading 'TGRA' option... \n");
+		    fclose(incar);
+		    return 1;
+		}
+		tok(option,temp);
+		melt[4]=atof(temp);
+	    }else{ // NO FDM, NO FROZEN T APPROX. -> ISOTHERMAL ASSUMPTION
+	    }
+	}
+
 	    if(find_keyword(incar,"TIME",option)!=0) // ==0 when there is no error
 		out[5]=2;
 	    else{
@@ -695,7 +691,7 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 		else
 		    melt[6]=0;
 	    }
-	}
+
 	if(rscale[0]==2){ // AM module
 	    if(find_keyword(incar,"DIR",option)!=0){ // ==0 when there is no error
 		printf(" INPUT FILE ERROR in READING 'DIR' option...\n");
@@ -763,6 +759,7 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 		fclose(incar);
 		return 1;
 	    }
+
 	    if(am[0]==0){ // Teardrop shaped meltpool
 		if(find_keyword(incar,"WID",option)!=0){ // ==0 when there is no error
 		    printf(" INPUT FILE ERROR in READING 'WID' option...\n");
@@ -866,6 +863,18 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 			return 1;
 		    }
 		}
+		if(find_keyword(incar,"GMP",option)!=0) // ==0 when there is no error
+		    am[10]=0; // default value == Tm
+		else{
+		    tok(option,temp);
+		    if(is_valid_digits(temp))
+			am[10]=atof(temp);
+		    else{
+			printf(" INPUT ERROR for 'GMP' option...\n");
+			fclose(incar);
+			return 1;
+		    }
+		}
 	    }else if(am[0]>0){ // Gaussian melting
 		if(find_keyword(incar,"POW",option)!=0){ // ==0 when there is no error
 		    printf(" INPUT FILE ERROR in READING 'POW' option...\n");
@@ -959,6 +968,7 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 		    }
 	    }
 	}
+  }
 	fclose(incar);
 	return 0;
 }
@@ -1384,7 +1394,7 @@ void example_incar(){ // Create example INCAR file
 	FILE *incar;
 
 	incar=fopen("example.in","w");
-	fprintf(incar,"\
+	fprintf(incar,"\n\
 ##################################################################################################\n\
 # SHIMS INCAR FORMAT\n\
 # YES = Y, NO = N\n\
@@ -1401,7 +1411,8 @@ void example_incar(){ // Create example INCAR file
 # MODE:  SIMULATION TYPE\n\
 #        (GG   = Grain Growth without FDM\n\
 #         CONV = Conventional processes\n\
-#         AM   = additive manufacturing)\n\
+#         AM   = Additive manufacturing\n\
+#         SB   = Shear band heating in amorphous alloy)\n\
 # REAL:  REALISTIC TIME ASSIGNMENT\n\
 # FDM :  CONSIDER HEAT TRANSFER?\n\
 #        (FDM = Y TO SOLVE HEAT TRANSFER EQUATION USING FDM)\n\
@@ -1449,12 +1460,12 @@ ACCL = 1.0\n\
 # FROZCARD (ONLY AVAILABLE WHEN FDM = N)\n\
 #\n\
 # FROZ:  FROZEN TEMPERATURE APPROXIMATION?\n\
-# TINI:  INTERFACE TEMPERATURE? (ONLY AVAILABLE WHEN FROZ = Y OPTION, in K unit)\n\
+# TINT:  INTERFACE TEMPERATURE? (ONLY AVAILABLE WHEN FROZ = Y OPTION, in K unit)\n\
 # TGRA:  TEMPERATURE GRADIENT?  (ONLY AVAILABLE WHEN FROZ = Y OPTION, in K/voxel unit)\n\
 #        TGRA > 0 MEANS dT/dx > 0 IN X DIRECTION\n\
 #\n\
 FROZ = N\n\
-TINI = 000.0 K\n\
+TINT = 000.0 K\n\
 TGRA = 000.0 K\n\
 ##################################################################################################\n\
 # FDMCARD\n\
@@ -1536,6 +1547,7 @@ tSCA = 1E2\n\
 # RAD:  Initial melt pool radius (unit voxel)\n\
 # DEP:  Maximum depth of melt pool (unit voxel, default = RAD)\n\
 # TMP:  Melt pool boundary temperature (unit K, default = Tm)\n\
+# GMP:  T gradient within the melt pool (unit K/voxel)\n\
 ### Below options are for MMOD = TEAR ###\n\
 # WID:  Initial melt pool width (unit voxel)\n\
 # CTL:  Initial melt pool cap+tail length (unit voxel)\n\
@@ -1555,6 +1567,7 @@ POS  = 20 20\n\
 VEL = 500E-3 m/s\n\
 MMOD = TEAR\n\
 #TMP  = 2000 K\n\
+GMP = 10\n\
 #RAD  = 20 vox\n\
 DEP  = 5  vox\n\
 GEO  = 1.0\n\
@@ -1565,6 +1578,8 @@ SX   = 100E-6 m\n\
 SY   = 100E-6 m\n\
 POW  = 400 W\n\
 ABS  = 0.25\n\
+##################################################################################################\n\
+# SBCARD (ONLY AVAILABLE WHEN MODE = SB)\n\
 #EOF\n");
 	fclose(incar);
 	return;

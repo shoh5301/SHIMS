@@ -893,6 +893,7 @@ void MeltPool_movement(double pos[],double direction,double displ){
 
 void MeltPool(int**** grid,double**** tgrid,double am[],double mp[],int dir[],int pbc[],double Tm,double dH,double pos[]){
 	int i,j,k,xmax,ymax,zmax,tear[2],mode=0;
+	int xmin,ymin;
 	double temp,x,y;
 
 //printf("position x %f y %f // rank %d\n",pos[0],pos[1],n_rank);
@@ -1008,10 +1009,16 @@ void MeltPool(int**** grid,double**** tgrid,double am[],double mp[],int dir[],in
 	    for(k=dir[2]-1;k>zmax;k--){
 		temp=sqrt(am[2]*am[2]*(1-(double)(dir[2]-1-k)/am[4])); // radius at each z coordinate
 		xmax=deter((int)(x+(int)temp),dir[0],0);
-		for(i=deter((int)(x-(int)temp),dir[0],0);i<xmax;i++){ // Cap+Tail Melt Pool
+		for(i=deter((int)(x-(int)temp),dir[0],0);i<xmax;i++){
 		    ymax=deter((int)(y+sqrt(temp*temp-(i-x)*(i-x))),dir[1],0);
 		    for(j=deter((int)(y-sqrt(temp*temp-(i-x)*(i-x))),dir[1],0);j<ymax;j++){
-			tgrid[0][i][j][k]=am[9];
+			// Tm for whole meltpool
+			// tgrid[0][i][j][k]=am[9];
+			
+			// Tm ~ T gradient within melt pool
+			tgrid[0][i][j][k]=am[9]+circular_grad(i,j,x,y,temp)*am[10];
+//printf("hello %E wher am10 %E\n",circular_grad(i,j,x,y,temp)*am[10],am[10]);
+/*
 			if(mode==0 && grid[i][j][k][0]!=LIQORI){ // LIQ melt at FDM stage?
 			    if(grid[i][j][k][0]!=MPISURF && grid[i][j][k][0]!=PTCLORI)
 				neworient_melting(grid[i][j][k]);
@@ -1024,23 +1031,30 @@ void MeltPool(int**** grid,double**** tgrid,double am[],double mp[],int dir[],in
 	return;
 }
 
+double circular_grad(int x,int y,int x0,int y0,double rad){
+	return rad-sqrt((x-x0)*(x-x0)+(y-y0)*(y-y0));
+}
+
 int teardrop(double b, double t,int geo){  // Melt pool shape curve
 return (int)(b*sin(t)*(pow(sin(t/2),geo)));
 }
 
 void check_melting(int**** grid,double**** tgrid,double Tm,int dir[]){
 	int i,j,k;
+//int cnt=0;
 	for(i=dir[0]-1;i>=0;i--){
-	    for(j=dir[1];j>=0;j--){
-		for(k=dir[2];k>=0;k--){
+	    for(j=dir[1]-1;j>=0;j--){
+		for(k=dir[2]-1;k>=0;k--){
 		    if(tgrid[0][i][j][k]>=Tm && grid[i][j][k][0]!=LIQORI){
-			if(grid[i][j][k][0]!=MPISURF && grid[i][j][k][0]!=PTCLORI)
+			if(grid[i][j][k][0]!=MPISURF && grid[i][j][k][0]!=PTCLORI)//{
 			    neworient_melting(grid[i][j][k]);
+//			    cnt++;
+//			}
 		    }
 		}
 	    }
 	}
-
+//	printf("cnt %d\n",cnt);
 	return;
 }
 

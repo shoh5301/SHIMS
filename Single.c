@@ -760,7 +760,7 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 //		Particle_Form(grid,dir,pbc,jc[7]);
 	    if(mode[MPRO]>=0){
 		heat_transfer(fdmt,tbc,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mode[MPRO]); // Loop inside the function
-		if(am[9]>Tmax[0])
+		if(am[9]>=Tmax[0])
 		    check_melting(grid,fdmt,Tmax[0],dir);
 	    }
 	    mcs++;

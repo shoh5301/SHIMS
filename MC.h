@@ -21,6 +21,7 @@ double solidi_df(double dHfus,double Tnow,double Tliq,double Tfreez,double T0);
 void heat_transfer(double**** tgrid,double tbc[][2],int dir[],int pbc[],double mcdx,double const melt[],int fdm_loop,double k_per_cp,double Tmelt,int mode);//,double dHfus){
 void MeltPool_movement(double pos[],double direction,double displ);
 void MeltPool(int**** grid,double**** tgrid,double am[],double mp[],int dir[],int pbc[],double Tm,double dH,double pos[]);
+double circular_grad(int x,int y,int x0,int y0,double rad);
 int teardrop(double b, double t,int geo); // Melt pool shape curve
 void check_melting(int**** grid,double**** tgrid,double Tm,int dir[]);
 void Particle_Form(int**** grid,int dir[],int pbc[],double fraction);

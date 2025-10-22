@@ -1043,7 +1043,7 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 
 	    if(mode[MPRO]>=0){
 		heat_transfer_MPI(mpitgrid,tbc,mpidir,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mpixlen[2]);
-		if(am[9]>Tmax[0])
+		if(am[9]>=Tmax[0])
 		    check_melting(mpigrid,mpitgrid,Tmax[0],mpidir);
 	    }
 
