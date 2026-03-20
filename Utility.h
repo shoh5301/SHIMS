@@ -51,11 +51,19 @@ extern int n_rank;
 #define GAUSS3D 0.06349363593
 #define GAUSS2D 0.1591549431
 
+#define DenTipRad 5E-6
+
 #define MLAT 0
 #define MFIT 1
 #define MTEM 2
 #define MPRO 3
 
+typedef struct {
+	int x,y,z;
+} Pos;
+
+double Xl_df(char eq[],double Tnow,double dHfus,double Tmax[],double T0);
+double solidi_df(double dHfus,double Tnow,double Tliq,double Tfreez,double T0);
 int prob_check(double prob);
 void voxcpy(int paste[],int copy[]);
 //void nei6sel(int i,int *x,int *y, int *z,int dir[],int pbc[]);
@@ -71,6 +79,7 @@ int mpi_surf_check(int i,int x,int y,int z,int**** grid);
 int surf_check(int i,int x,int y,int z,int dir[],int pbc[]); // return >=0 if surface
 void pow2grain(int ori[]);
 int latent_heat_check(double*** tgrid,int dir[]);
+double avgtcalc(double*** temp,int dir[],int mode);
 double average_temp(double*** temp,int x,int y,int z,int inter,int dir[],int pbc[]);
 double recover_temp(double*** temp,int x,int y,int z,int del,int pts[]);
 double distance(int p11,int p12,int p13,int p21,int p22,int p23);
@@ -94,8 +103,8 @@ void fileout(int dir[],int**** grid,int mcs); // Make MCS.dat file
 void QS(double arr[], int left, int right); //quick sort
 void tok(char* line,char* word); // tok line by " " & "\t"
 double grainsize_ff(int**** const grid,int dir[],int mode); // Grain distribution by flood-fill
-void DFS_array_simple(int con[],int x,int y,int z,int gori,int**** const grid,int*** checker,int* cnt,int pbc[]); // Flood-fill DFS
-void DFS_array(int con[],int x,int y,int z,int gori,int**** const grid,int*** checker,int lim[],int* cnt,int pbc[]); // Flood-fill DFS, max.&min. position check
+void DFS_array_quick(int con[],int start_x, int start_y, int start_z, int gori, int**** const grid, int*** checker, int* cnt, Pos* stack,int pbc[]);
+void DFS_array(int con[],int x,int y,int z,int gori,int**** const grid,int*** checker,int lim[],int* cnt,Pos* stack,int pbc[]);
 void IFposition(int**** const grid,int dir[],int cor,int start); // find S-L interface position
 void pdas(int**** tgrid,char fnam[],int dir[]);
 double MCS_time_acceleration(double dt[],double factor[],double Pmax[],int mode);

@@ -23,5 +23,5 @@ void init_stack(void);
 void push(double);
 double pop(void);
 void Etodec(char* eq);
-void time_ins(char* Gline,double const time);
+void var_ins(char* Gline,double const time,char keyword[]);
 

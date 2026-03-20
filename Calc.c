@@ -264,12 +264,13 @@ void Etodec(char* eq){ //Change 3E4 -> 3*10^4
 		for(i=prev;num[i-prev]!='\0';i++)
 			eq[i]=num[i-prev];
 		if(temp[i-3]=='+'){
-		    for(i=prev+4;temp[i-2]!='\0';i++) //get chars after exponent
-			eq[i]=temp[i-2];
+		    for(i=prev+4;temp[i-2+((temp[prev + 2]=='0')?1:0)]!='\0';i++) //get chars after exponent
+			eq[i]=temp[i-2+((temp[prev + 2]=='0')?1:0)];
 		    eq[i]='\0';
 		}else{
 		    for(i=prev+4;temp[i-3]!='\0';i++) //get chars after exponent
-			eq[i]=temp[i-3];
+			eq[i]=temp[(i==prev+4)?(i-3):(i-3)+((temp[prev+2]=='0')?1:0)];
+//			eq[i]=temp[i-3];
 		    eq[i]='\0';
 		}
 	}
@@ -277,13 +278,13 @@ void Etodec(char* eq){ //Change 3E4 -> 3*10^4
 	return;
 }
 
-void time_ins(char* Gline,double const time){
+void var_ins(char* Gline,double const time,char keyword[]){
         char temp[MAX]={'\0'},temp2[MAX]={'\0'};
         char* tptr;
         int i;
 
         while(1){
-                tptr=strstr(Gline,"t");
+                tptr=strstr(Gline,keyword);
                 if(tptr!=NULL){
                         strcpy(temp,tptr);
                         for(i=1;i<MAX;i++){

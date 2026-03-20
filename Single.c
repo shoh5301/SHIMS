@@ -4,7 +4,7 @@ void GGmodule(int**** grid,double jc[],int dir[],int out[],char ttem0[],double m
 	clock_t start,end;
 	char tcheck[2],temp[100],Tfun[50]; //Tfun: postfix equation for T-t rel.
 	int i,j,k,l,o,mcs=0,total=0,step=0,stepdiv[2],check=2,dmc[3]={1};
-	FILE* log=NULL; //     rtim 0 = total time // 1 = dt // 2 = junk // 3 = Lamda (mm / sites) // 4 = time range for T
+	FILE* log=NULL;
 	double realt,rtim[5]={0},realE,pmob,Tmelt,factor;
 
 	if(out[3]<=0){ // Time criteria is MCS
@@ -81,7 +81,6 @@ void GGmodule(int**** grid,double jc[],int dir[],int out[],char ttem0[],double m
 //			     dx^2 / (K T)
 			pmob=factor*exp(-rscale[3]*(1/realt-1/Tmelt)*REVRGAS);
 //					Q  * (1/T-1/Tm)  / R
-//printf("realE %E pmob %E factor %E\n",realE,pmob,factor);
 		}
 		mcs++;
 		step=total;
@@ -146,26 +145,19 @@ void GGmodule(int**** grid,double jc[],int dir[],int out[],char ttem0[],double m
 	return;
 }
 
-void SOLmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc[],double rscale[],double tbc[][2]){
+void SOLmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc[],double rscale[],double tbc[][2],char dfeq[]){
 	clock_t start,end,ttime;
-	char temp[100],Tfun[50]; //Tfun: postfix equation for T-t rel.
+	char temp[100],Tfun[50];
 	int i,j,k,l,m,n,o,situ;
 	int mcs=0,total=0,step=0,dmc[3]={1},fdm_loop=0;
 	int mode[4]={1,1,0,0};
-	// [0] == lat_mode,[1] == fit_mode,[2] == T_mode, [3] == P_mode;
-	// P_mode > 0 -> homogeneous phases, so accelerate FDM // P_mode < 0 -> fixed (isothermal)
-	double k_per_cp,Tmax[3],Tinfo[2]={0},dtsave[2]; //dtsave 0 = dtfdm, 1 = prevdt
-	// Tmax 0 == T_liq, 1 == T_init for solidification, 2 == freezing ragne
-	// Tinfo 0 = minimum among liquid, 1 = maximum among solid, Pmax 0 for GG, 1 for solidification
-	double Vsite,Asite,fnucl,factor[2]; // factor 0 = g.g. 1 = solid nucl. & growth
-	double pcps[3]; // 0 == pcmax, 1 == psmax, 2 == 1/(pcmax+psmax)
-	double rtim[5]={0},dEif,prob,dGfor,dGfus,dtdMCS[2]={0}; //dtdMCS 0 = g.g. 1 = solid nucl. & growth
+	double k_per_cp,Tmax[3],Tinfo[2]={0},dtsave[2]; 
+	double Vsite,Asite,fnucl,factor[2]; 
+	double pcps[3]; 
+	double rtim[5]={0},dEif,prob,dGfor,dGfus,dtdMCS[2]={0};
 	double Tnow,dHfus[2],fhetero_s,Nsite[2];
-	// dHfus 0 == dHfus_m3, dHfus 1 == dH_per_Cp
-	//Nsite[2]; //Nsite 0 == volumic density * voxel volume, 1 == plane density *voxel area
-	double ****fdmt=NULL; // 0 is T for now, 1 is T for next, 2 is for latent heat info.
+	double ****fdmt=NULL;
 	FILE* ftemp=NULL;
-//  rtim 0 = total time // 1 = dt_MCS in simul // 2 = solid fraction measurement (1 to yes) // 3 = Lamda (mm / sites) // 4 = time range for T
 
         int**** mpigrid=NULL;
         int** mpicount=NULL; // yz plane: duplicated cell checker
@@ -202,9 +194,7 @@ void SOLmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pb
 	// finally, 
 	melt[6]=dHfus_per_Cp*(melt[1]/melt[6]);*/
 	dtsave[0]=melt[1]; // original dt for FDM
-	melt[6]=dHfus[1]*melt[1]/(rscale[1]*rscale[1])*melt[3]*rscale[9]/melt[4];
-	if(melt[6]>dHfus[1])
-		melt[6]=dHfus[1];
+	melt[6]=LatHeatPerStep(dHfus[1],melt[1],rscale[1],melt[3],rscale[9],melt[4]);
 
 	//      k    *dt / Cp    * dx^2
 	Tmax[0]=rscale[2]; // Tliq
@@ -213,7 +203,10 @@ void SOLmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pb
 
 	// for solidification
 	pcps[0]=Asite*(26*(jc[1]-jc[4])); // heterog. nucleation surrounded by other grains: maximum pc value for "a solid nucleus"
-	pcps[1]=Vsite*dHfus[0]*(1-KAUZMANN); // 1-Tk/Tm where Tk is Kauzmann Temperature for glass transition
+	if(dfeq[0]=='d')
+		pcps[1]=Vsite*dHfus[0]*(1-KAUZMANN); // 1-Tk/Tm where Tk is Kauzmann Temperature for glass transition
+	else
+		pcps[1]=Vsite*Xl_df(dfeq,KAUZMANN*melt[8],dHfus[0],Tmax,melt[8]); //dHfus[0]*(1-KAUZMANN); // 1-Tk/Tm where Tk is Kauzmann Temperature for glass transition
 	pcps[2]=1/(pcps[0]+pcps[1]);
 
 	if(out[3]<=0){ // Time criteria is MCS
@@ -291,7 +284,7 @@ void SOLmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pb
 		// in FDM loop, automatically ++
 	    }else
 		fdm_loop=(int)(rtim[1]/melt[1]);
-	    melt[6]=dHfus[1]*melt[1]/(rscale[1]*rscale[1])*melt[3]*rscale[9]/melt[4];
+	    melt[6]=LatHeatPerStep(dHfus[1],melt[1],rscale[1],melt[3],rscale[9],melt[4]);
 	    dtsave[2]=rtim[1];
 	}else{
 //	    if(rtim[1]>rscale[12]){
@@ -321,7 +314,7 @@ void SOLmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pb
 	    if(rtim[1]<melt[1]){ // fdm time > MC time
 		printf("(this will be adjusted because MCS < t_FDM)\n");
 		melt[1]=rtim[1];
-		melt[6]=dHfus[1]*melt[1]/(rscale[1]*rscale[1])*melt[3]*rscale[9]/melt[4];
+		melt[6]=LatHeatPerStep(dHfus[1],melt[1],rscale[1],melt[3],rscale[9],melt[4]);
 
 		fdm_loop=0;
 		// in FDM loop, automatically ++
@@ -356,18 +349,18 @@ void SOLmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pb
 		i=(int)(rand()/(RAND_MAX/dir[0]+1));
 		j=(int)(rand()/(RAND_MAX/dir[1]+1));
 		k=(int)(rand()/(RAND_MAX/dir[2]+1));
-		MCtrial_SOL(i,j,k,grid,fdmt,dir,pbc,mode,melt,Tmax,dHfus,jc,tbc,Vsite,Asite,factor,Nsite,pcps,rscale[3]);
+		MCtrial_SOL(i,j,k,grid,fdmt,dir,pbc,mode,melt,Tmax,dHfus,jc,tbc,Vsite,Asite,factor,Nsite,pcps,rscale[3],dfeq);
 		step--;     // 1 Attempt
 	    }
 
 	    if(mode[MLAT]!=0 && mode[MTEM]==0)
-		heat_transfer(fdmt,tbc,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mode[MPRO]); // Loop inside the function
+		heat_transfer(grid,fdmt,tbc,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mode[MPRO]); // Loop inside the function
 	    else{
 		if(mode[MPRO]>=0)
-		    heat_transfer(fdmt,tbc,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mode[MPRO]);
+		    heat_transfer(grid,fdmt,tbc,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mode[MPRO]);
 		else{
 		    if(latent_heat_check(fdmt[2],dir)!=0) // Latent heat is not fully consumed 
-		        heat_transfer(fdmt,tbc,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mode[MPRO]);
+		        heat_transfer(grid,fdmt,tbc,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mode[MPRO]);
 		    // else, isothermal condition
 		}
 	    }
@@ -377,7 +370,6 @@ void SOLmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pb
 		if(dmc[2]==0){ // time OPT
 		    dmc[2]=out[6];
 		    rtim[1]=fixed_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt);
-//		    rtim[1]=active_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt);
 		}
 		if(rtim[1]<0){
 		    printf(" @@@ Liquid fraction is 0, solidification is DONE @@@\n");
@@ -464,26 +456,19 @@ void SOLmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pb
 	return;
 }
 
-void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc[],double rscale[],double tbc[][2],double am[]){
+void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc[],double rscale[],double tbc[][2],double am[],char dfeq[]){
 	clock_t start,end,ttime;
 	char temp[100],Tfun[50]; //Tfun: postfix equation for T-t rel.
 	int i,j,k,l,m,n,o,situ;
 	int mcs=0,total=0,step=0,dmc[3]={1},fdm_loop=0;
 	int mode[4]={1,1,0,0};
-	// [0] == mode[MLAT],[1] == fit_mode,[2] == T_mode, [3] == FDM acceleration mode (MPRO);
-	// mode[MPRO] > 0 -> homogeneous phases, so accelerate FDM // mode[MPRO] < 0 -> fixed (isothermal)
-	double k_per_cp,Tmax[3],Tinfo[2]={0},dtsave[2],Pmax[2]; //dtsave 0 = dtfdm, 1 = dtsave[1]
-	// Tmax 0 == Tmax[0], 1 == T_init for solidification, 2 == Tmax for melting, 
-	// Tinfo 0 = minimum among liquid, 1 = maximum among solid, Pmax 0 for GG, 1 for solidification
-	double Vsite,Asite,fnucl,factor[2]; // factor 0 = g.g. 1 = solid nucl. & growth
-	double pcps[3]; // 0 == pcmax, 1 == psmax, 2 == 1/(pcmax+psmax)
-	double rtim[5]={0},dEif,prob,dGfor,dGfus,dtdMCS[2]={0}; //dtdMCS 0 = g.g. 1 = solid nucl. & growth
+	double k_per_cp,Tmax[3],Tinfo[2]={0},dtsave[2],Pmax[2];
+	double Vsite,Asite,fnucl,factor[2];
+	double pcps[3];
+	double rtim[5]={0},dEif,prob,dGfor,dGfus,dtdMCS[2]={0};
 	double Tnow,dHfus[2],fhetero_s,Nsite[2],mp[5],pos[2];
-	// dHfus 0 == dH_m3, dHfus 1 == dH_per_Cp
-	//Nsite[2]; //Nsite 0 == volumic density * voxel volume, 1 == plane density *voxel area
-	double ****fdmt=NULL; // 0 is T for now, 1 is T for next, 2 is for latent heat info.
+	double ****fdmt=NULL;
 	FILE* ftemp=NULL;
-//  rtim 0 = total time // 1 = dt_MCS in simul // 2 = solid fraction measurement (1 to yes) // 3 = Lamda (mm / sites) // 4 = time range for T
 
 	printf("\n####### MODULE : AM #########\n");
 	rtim[3]=rscale[1];//(m to mm)
@@ -519,9 +504,7 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 	// finally, 
 	melt[6]=dHfus[1]*(melt[1]/melt[6]);*/
 	dtsave[0]=melt[1]; // original dt for FDM
-	melt[6]=dHfus[1]*melt[1]/(rscale[1]*rscale[1])*melt[3]*rscale[9]/melt[4];
-	if(melt[6]>dHfus[1])
-		melt[6]=dHfus[1];
+	melt[6]=LatHeatPerStep(dHfus[1],melt[1],rscale[1],melt[3],rscale[9],melt[4]);
 
 	//      k    *dt / Cp    * dx^2
 	Tmax[0]=rscale[2];
@@ -530,7 +513,10 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 
 	// for solidification
 	pcps[0]=Asite*(26*(jc[1]-jc[4])); // heterog. nucleation surrounded by other grains: maximum pc value for "a solid nucleus"
-	pcps[1]=Vsite*dHfus[0]*(1-KAUZMANN); // 1-Tk/Tm where Tk is Kauzmann Temperature for glass transition
+	if(dfeq[0]=='d')
+		pcps[1]=Vsite*dHfus[0]*(1-KAUZMANN); // 1-Tk/Tm where Tk is Kauzmann Temperature for glass transition
+	else
+		pcps[1]=Vsite*Xl_df(dfeq,KAUZMANN*melt[8],dHfus[0],Tmax,melt[8]); //dHfus[0]*(1-KAUZMANN); // 1-Tk/Tm where Tk is Kauzmann Temperature for glass transition
 	pcps[2]=1/(pcps[0]+pcps[1]);
 
 	if(out[3]<=0){ // Time criteria is MCS
@@ -599,7 +585,7 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 		// in FDM loop, automatically ++
 	    }else
 		fdm_loop=(int)(rtim[1]/melt[1]);
-	    melt[6]=dHfus[1]*melt[1]/(rscale[1]*rscale[1])*melt[3]*rscale[9]/melt[4];
+	    melt[6]=LatHeatPerStep(dHfus[1],melt[1],rscale[1],melt[3],rscale[9],melt[4]);
 	    dtsave[2]=rtim[1];
 	}else{
 //	    if(rtim[1]>rscale[12]){
@@ -646,7 +632,7 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 		// in FDM loop, automatically ++
 	    }else
 		fdm_loop=(int)(rtim[1]/melt[1]);
-	    melt[6]=dHfus[1]*melt[1]/(rscale[1]*rscale[1])*melt[3]*rscale[9]/melt[4];
+	    melt[6]=LatHeatPerStep(dHfus[1],melt[1],rscale[1],melt[3],rscale[9],melt[4]);
 	    dtsave[1]=rtim[1];
 	}else{// if(rtim[1]>rscale[12])
 	    factor[0]=factor[0]*rscale[12]/rtim[1];
@@ -684,35 +670,14 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 		
 	dtsave[1]=rtim[1];
 
-// Melt pool info.
-// am 0 = Melt pool mode (-1 = Circle, 0 = TEARDROP,  1 = Gaussian) 
-// 1 = Melt pool direction (negative -> X, positive -> Y)
-// Start position (x = 6, y = 7), 8 = scan speed
-// when am[0]==-1: 2 = Radius, 9 = Boundary Temperature
-// when am[0]==0:  2 = Width  3 = Cap+Tail length  4 = Depth  5 = Geometry (Teardrop shape), 9 = Boundary Temperature
-// when am[0]==1:  2 = SX     3 = SY               4 = SZ    5 = POW  9 = ABS    (Gaussian)
 	if(am[0]==0){
 	    mp[0]=4*atan(sqrt(2-sqrt(3))); // temporarily, mp[0] = theta
 	    mp[1]=am[3]/2;
 	    mp[2]=am[2]/(2*sin(mp[0])*pow(sin(mp[0]*0.5),am[5]));
 	    mp[3]=am[4]/(sin(mp[0])*pow(sin(mp[0]*0.5),am[5]));
 	}else if(am[0]>0){ // GAUSSIAN
-// mp 0 -> distance for jumping
-//    5 -> aP/(2 pi)^1.5/(sx sy sz)
-//    2 -> 1/sx^2    3 -> 1/sy^2   4 -> 1/sz^2 // all in voxel^2 unit
-//    1 -> ap/(2 pi)^1.5/(sx sy sz) converted to K / s
-    
-//    GAUSS3D = (2 pi)^-1.5
-//	    mp[1]=am[9]*am[5]*GAUSS3D/(am[2]*am[3]*am[4]); // W / m3 = J / m3 s
-//	    mp[1]=mp[1]*rscale[9]*rtim[1]/melt[4]; // J / m3 s * m3 / mol * s / J/K mol = K
-/*	    mp[5]=am[9]*am[5]*GAUSS3D/(am[2]*am[3]*am[4])*rscale[9]/melt[4];
-	    mp[1]=mp[5]*rtim[1];*/
-//    GAUSS2D = (2 pi) ^ -1
-//	    mp[1]=am[9]*am[5]*GAUSS2D/(am[2]*am[3]); // W / m2 = J / m2 s
-//	    mp[1]=mp[1]*pow(rscale[9],2/3)*rtim[1]/melt[4]; // J / m2 s * m2 / mol * s / J/K mol = K
 	    mp[5]=am[9]*am[5]*GAUSS2D/(am[2]*am[3])*pow(rscale[9],2/3)/melt[4];
 	    mp[1]=mp[5]*rtim[1];
-// sx, sy, sz unit m -> sx, sy, sz unit voxel
 	    am[2]=am[2]/rscale[1];
 	    am[3]=am[3]/rscale[1];
 	    am[4]=am[4]/rscale[1];
@@ -759,7 +724,7 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 //	    if(jc[7]!=0) // PTCL introduction
 //		Particle_Form(grid,dir,pbc,jc[7]);
 	    if(mode[MPRO]>=0){
-		heat_transfer(fdmt,tbc,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mode[MPRO]); // Loop inside the function
+		heat_transfer(grid,fdmt,tbc,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mode[MPRO]); // Loop inside the function
 		if(am[9]>=Tmax[0])
 		    check_melting(grid,fdmt,Tmax[0],dir);
 	    }
@@ -771,7 +736,7 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 		j=(int)(rand()/(RAND_MAX/dir[1]+1));
 		k=(int)(rand()/(RAND_MAX/dir[2]+1));
 
-		MCtrial_SOL(i,j,k,grid,fdmt,dir,pbc,mode,melt,Tmax,dHfus,jc,tbc,Vsite,Asite,factor,Nsite,pcps,rscale[3]);
+		MCtrial_SOL(i,j,k,grid,fdmt,dir,pbc,mode,melt,Tmax,dHfus,jc,tbc,Vsite,Asite,factor,Nsite,pcps,rscale[3],dfeq);
 		step--;
 	    }
 //puts("MCS DONE");
@@ -782,7 +747,6 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 		if(dmc[2]==0){ // time OPT
 		    dmc[2]=out[6];
 		    rtim[1]=fixed_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt);
-//		    rtim[1]=active_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt);
 		}
 		if(rtim[1]<0){
 		    printf(" @@@ Liquid fraction is 0, solidification is DONE @@@\n");
@@ -856,4 +820,337 @@ void AMmodule(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc
 
 	return;
 }
+
+void heat_transfer(int**** grid,double**** tgrid,double tbc[][2],int dir[],int pbc[],double mcdx,double const melt[],int fdm_loop,double k_per_cp,double Tmelt,int mode){ //,double dHfus){
+	int i,j,k,l,inter=1,temp[3],fdmax[3];//imax,jmax,kmax;
+	double hconv,revdx2;
+	
+	fdm_loop++; // considering round down when (double -> int)
+	if(fdm_loop==0){
+		printf("FDM ERROR: wrong FDM loop number %d\n  -> Automatically changed to 1\n");
+		fdm_loop=1;
+	}
+
+	fdmax[0]=dir[0]-1;
+	fdmax[1]=dir[1]-1;
+	fdmax[2]=dir[2]-1;
+
+	if(mode==0){
+	    revdx2=1/(mcdx*mcdx);
+	    inter=1;
+	}else{
+	    mcdx=mcdx*melt[7];
+	    revdx2=1/(mcdx*mcdx);
+	    inter=(int)melt[7];
+	    if(mode==1){
+// Take T values as the average of surrounding values
+	      for(i=fdmax[0];i>=0;i-=inter){
+		for(j=fdmax[1];j>=0;j-=inter){
+		    for(k=fdmax[2];k>=0;k-=inter)
+	 		tgrid[0][i][j][k]=average_temp(tgrid[0],i,j,k,inter,dir,pbc);
+		}
+	      }
+// Indicate voxels that are not included in the calculation
+	      for(i=fdmax[0];i>=0;i--){
+		for(j=fdmax[1];j>=0;j--){
+		    for(k=fdmax[2];k>=0;k--)
+			tgrid[1][i][j][k]=-1;
+		}
+	      }
+	    }
+	}
+
+// Latent heat divided by loop number : retroactive accumulation of latent heat for 1 MCS
+// Latent heat multiplied with phase transf. fraction : when dx_fdm != dx_mc, delta_fs != 1: delta_fs == V_mc / V_fdm
+// FDM loop
+	for(l=fdm_loop;l>0;l--){ // FDM time flow to 1 MCS
+//printf("fdm_loop %d l %d\n",fdm_loop,l);
+	    if(mode==0){ // if P_mode>0, single phase mode w/o accumulated latent heat
+// Latent heat consideration
+		for(i=fdmax[0];i>=0;i--){
+		    for(j=fdmax[1];j>=0;j--){
+			for(k=fdmax[2];k>=0;k--){
+			    if(tgrid[2][i][j][k]!=0)
+				LatHeatDiffus(&(tgrid[0][i][j][k]),&(tgrid[2][i][j][k]),melt[6]);
+			}
+		    }
+		}
+	    }
+//	0. inner part
+		for(i=fdmax[0]-inter;i>0;i-=inter){
+			for(j=fdmax[1]-inter;j>0;j-=inter){
+				for(k=fdmax[2]-inter;k>0;k-=inter){
+				  if(grid[i][j][k][1]==POWORI)
+				  tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*melt[9]*\
+						   (revdx2*(tgrid[0][i+inter][j][k]+tgrid[0][i-inter][j][k]-2*tgrid[0][i][j][k])+\
+						    revdx2*(tgrid[0][i][j+inter][k]+tgrid[0][i][j-inter][k]-2*tgrid[0][i][j][k])+\
+						    revdx2*(tgrid[0][i][j][k+inter]+tgrid[0][i][j][k-inter]-2*tgrid[0][i][j][k]));
+				  else
+				  tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*\
+						   (revdx2*(tgrid[0][i+inter][j][k]+tgrid[0][i-inter][j][k]-2*tgrid[0][i][j][k])+\
+						    revdx2*(tgrid[0][i][j+inter][k]+tgrid[0][i][j-inter][k]-2*tgrid[0][i][j][k])+\
+						    revdx2*(tgrid[0][i][j][k+inter]+tgrid[0][i][j][k-inter]-2*tgrid[0][i][j][k]));
+				}
+			}
+		}
+
+// 1. X direction
+		for(i=fdmax[0]-inter;i>0;i-=inter){
+			j=fdmax[1];
+			for(k=fdmax[2]-inter;k>0;k-=inter){ // bot & top xy planes
+				tgrid[1][i][0][k]=tgrid[0][i][0][k]+melt[1]*k_per_cp*\
+					   revdx2*(tgrid[0][i+inter][0][k]+tgrid[0][i-inter][0][k]-2*tgrid[0][i][0][k]);
+				tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*\
+					   revdx2*(tgrid[0][i+inter][j][k]+tgrid[0][i-inter][j][k]-2*tgrid[0][i][j][k]);
+			}
+			k=fdmax[2];
+			for(j=fdmax[1];j>=0;j-=inter){ // bot & top xz planes, including edges
+				tgrid[1][i][j][0]=tgrid[0][i][j][0]+melt[1]*k_per_cp*\
+					   revdx2*(tgrid[0][i+inter][j][0]+tgrid[0][i-inter][j][0]-2*tgrid[0][i][j][0]);
+				tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*\
+					   revdx2*(tgrid[0][i+inter][j][k]+tgrid[0][i-inter][j][k]-2*tgrid[0][i][j][k]);
+			}
+		}
+		i=fdmax[0];
+ 		if(pbc[0]!=0){// X pbc on
+			for(j=fdmax[1];j>=0;j-=inter){
+				for(k=fdmax[2];k>=0;k-=inter){ // [0][j][k] = [fdmax[0]][j][k]
+					tgrid[1][0][j][k]=tgrid[0][0][j][k]+melt[1]*k_per_cp*revdx2*\
+							  (tgrid[0][inter][j][k]+tgrid[0][i][j][k]-2*tgrid[0][0][j][k]);
+					tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*revdx2*\
+							  (tgrid[0][0][j][k]+tgrid[0][i-inter][j][k]-2*tgrid[0][i][j][k]);
+				}
+			}
+		}else{ // X pbc off
+// Lower X plane
+			if(tbc[0][0]==0){ // adiabatic
+			    for(j=fdmax[1];j>=0;j-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+				  tgrid[1][0][j][k]=tgrid[0][0][j][k]+melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][inter][j][k]-tgrid[0][0][j][k]);
+			    }
+			}else if(tbc[0][0]<0){ // convection
+			    hconv=tbc[0][1]*k_per_cp*melt[1]/(mcdx*melt[3]); // h k dt / (cp dx k) = h dt / (cp dx)
+			    for(j=fdmax[1];j>=0;j-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+				  tgrid[1][0][j][k]=tgrid[0][0][j][k]+melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][inter][j][k]-tgrid[0][0][j][k])-\
+						    hconv*(tbc[0][0]+tgrid[0][0][j][k]); // - (-Ta+Tnow)
+			    }
+			}else{ // tbc > 0 : heat sink
+			    for(j=fdmax[1];j>=0;j-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+				  tgrid[1][0][j][k]=tgrid[0][0][j][k]+melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][inter][j][k]+tbc[0][0]-2*tgrid[0][0][j][k]);
+			    }
+			}
+// Upper X plane
+			if(tbc[1][0]==0){ // adiabatic
+			    for(j=fdmax[1];j>=0;j-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+				  tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i-inter][j][k]-tgrid[0][i][j][k]);
+			    }
+			}else if(tbc[1][0]<0){ // convection
+			    hconv=tbc[1][1]*k_per_cp*melt[1]/(mcdx*melt[3]); // h k dt / (cp dx k) = h dt / (cp dx)
+			    for(j=fdmax[1];j>=0;j-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+				  tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i-inter][j][k]-tgrid[0][i][j][k])-\
+						    hconv*(tbc[1][0]+tgrid[0][i][j][k]); // - (-Ta+Tnow)
+			    }
+			}else{ // tbc > 0 : heat sink
+			    for(j=fdmax[1];j>=0;j-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+				  tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i-inter][j][k]+tbc[1][0]-2*tgrid[0][i][j][k]);
+			    }
+			}
+		}
+
+// 2. Y direction
+		for(j=fdmax[1]-inter;j>0;j-=inter){
+			i=fdmax[0];
+			for(k=fdmax[2]-inter;k>0;k-=inter){ // bot & top xz planes
+				tgrid[1][0][j][k]+=melt[1]*k_per_cp*\
+					   revdx2*(tgrid[0][0][j+inter][k]+tgrid[0][0][j-inter][k]-2*tgrid[0][0][j][k]);
+				tgrid[1][i][j][k]+=melt[1]*k_per_cp*\
+					   revdx2*(tgrid[0][i][j+inter][k]+tgrid[0][i][j-inter][k]-2*tgrid[0][i][j][k]);
+			}
+			k=fdmax[2];
+			for(i=fdmax[0];i>=0;i-=inter){ // bot & top xz planes, including edges
+				tgrid[1][i][j][0]+=melt[1]*k_per_cp*\
+					   revdx2*(tgrid[0][i][j+inter][0]+tgrid[0][i][j-inter][0]-2*tgrid[0][i][j][0]);
+				tgrid[1][i][j][k]+=melt[1]*k_per_cp*\
+					   revdx2*(tgrid[0][i][j+inter][k]+tgrid[0][i][j-inter][k]-2*tgrid[0][i][j][k]);
+			}
+		}
+
+		j=fdmax[1];
+ 		if(pbc[1]!=0){// Y pbc on
+			for(i=fdmax[0];i>=0;i-=inter){ // [i][fdmax][k] = [i][0][k]
+				for(k=fdmax[2];k>=0;k-=inter){
+					tgrid[1][i][0][k]+=melt[1]*k_per_cp*revdx2*\
+							  (tgrid[0][i][inter][k]+tgrid[0][i][j][k]-2*tgrid[0][i][0][k]);
+					tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+							  (tgrid[0][i][0][k]+tgrid[0][i][j-inter][k]-2*tgrid[0][i][j][k]);
+				}
+			}
+		}else{
+// Lower Y plane
+			if(tbc[2][0]==0){ // adiabatic
+			    for(i=fdmax[0];i>=0;i-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+				  tgrid[1][i][0][k]+=melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i][inter][k]-tgrid[0][i][0][k]);
+			    }
+			}else if(tbc[2][0]<0){ // convection
+			    hconv=tbc[2][1]*k_per_cp*melt[1]/(mcdx*melt[3]); // h k dt / (cp dx k) = h dt / (cp dx)
+			    for(i=fdmax[0];i>=0;i-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+				  tgrid[1][i][0][k]+=melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i][inter][k]-tgrid[0][i][0][k])-\
+						    hconv*(tbc[2][0]+tgrid[0][i][0][k]); // - (-Ta+Tnow) = Ta-Tnow
+			    }
+			}else{ // tbc > 0 : heat sink
+			    for(i=fdmax[0];i>=0;i-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+				  tgrid[1][i][0][k]+=melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i][inter][k]+tbc[2][0]-2*tgrid[0][i][0][k]);
+			    }
+			}
+// Upper Y plane
+			if(tbc[3][0]==0){ // adiabatic
+			    for(i=fdmax[0];i>=0;i-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i][j-inter][k]-tgrid[0][i][j][k]);
+			    }
+			}else if(tbc[3][0]<0){ // convection
+			    hconv=tbc[3][1]*k_per_cp*melt[1]/(mcdx*melt[3]); // h k dt / (cp dx k) = h dt / (cp dx)
+			    for(i=fdmax[0];i>=0;i-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i][j-inter][k]-tgrid[0][i][j][k])-\
+						    hconv*(tbc[3][0]+tgrid[0][i][j][k]); // - (-Ta+Tnow)
+			    }
+			}else{ // tbc > 0 : heat sink
+			    for(i=fdmax[0];i>=0;i-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i][j-inter][k]+tbc[3][0]-2*tgrid[0][i][j][k]);
+			    }
+			}
+		}
+
+// 3. Z direction
+		for(k=fdmax[2]-inter;k>0;k-=inter){
+			i=fdmax[0];
+			for(j=fdmax[1];j>=0;j-=inter){ // bot & top yz planes
+				tgrid[1][0][j][k]+=melt[1]*k_per_cp*\
+					   revdx2*(tgrid[0][0][j][k+inter]+tgrid[0][0][j][k-inter]-2*tgrid[0][0][j][k]);
+				tgrid[1][i][j][k]+=melt[1]*k_per_cp*\
+					   revdx2*(tgrid[0][i][j][k+inter]+tgrid[0][i][j][k-inter]-2*tgrid[0][i][j][k]);
+			}
+			j=fdmax[1];
+			for(i=fdmax[0]-inter;i>0;i-=inter){ // bot & top xz planes
+				tgrid[1][i][0][k]+=melt[1]*k_per_cp*\
+					   revdx2*(tgrid[0][i][0][k+inter]+tgrid[0][i][0][k-inter]-2*tgrid[0][i][0][k]);
+				tgrid[1][i][j][k]+=melt[1]*k_per_cp*\
+					   revdx2*(tgrid[0][i][j][k+inter]+tgrid[0][i][j][k-inter]-2*tgrid[0][i][j][k]);
+			}
+		}
+
+		k=fdmax[2];
+ 		if(pbc[2]!=0){// Z pbc on
+			for(i=fdmax[0];i>=0;i-=inter){
+				for(j=fdmax[1];j>=0;j-=inter){ // [i][k][0] = [i][j][fdmax]
+					tgrid[1][i][j][0]+=melt[1]*k_per_cp*revdx2*\
+							  (tgrid[0][i][j][inter]+tgrid[0][i][j][k]-2*tgrid[0][i][j][0]);
+					tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+							  (tgrid[0][i][j][0]+tgrid[0][i][j][k-inter]-2*tgrid[0][i][j][k]);
+				}
+			}
+		}else{
+// Lower Z plane
+			if(tbc[4][0]==0){ // adiabatic
+			    for(i=fdmax[0];i>=0;i-=inter){
+				for(j=fdmax[1];j>=0;j-=inter)
+				  tgrid[1][i][j][0]+=melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i][j][inter]-tgrid[0][i][j][0]);
+			    }
+			}else if(tbc[4][0]<0){ // convection
+			    hconv=tbc[4][1]*k_per_cp*melt[1]/(mcdx*melt[3]); // h k dt / (cp dx k) = h dt / (cp dx)
+			    for(i=fdmax[0];i>=0;i-=inter){
+				for(j=fdmax[1];j>=0;j-=inter)
+				  tgrid[1][i][j][0]+=melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i][j][inter]-tgrid[0][i][j][0])-\
+						    hconv*(tbc[4][0]+tgrid[0][i][j][0]); // - (-Ta+Tnow) = Ta-Tnow
+			    }
+			}else{ // tbc > 0 : heat sink
+			    for(i=fdmax[0];i>=0;i-=inter){
+				for(j=fdmax[1];j>=0;j-=inter)
+				  tgrid[1][i][j][0]+=melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i][j][inter]+tbc[4][0]-2*tgrid[0][i][j][0]);
+			    }
+			}
+// Upper Z plane
+			if(tbc[5][0]==0){ // adiabatic
+			    for(i=fdmax[0];i>=0;i-=inter){
+				for(j=fdmax[1];j>=0;j-=inter)
+				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i][j][k-inter]-tgrid[0][i][j][k]);
+			    }
+			}else if(tbc[5][0]<0){ // convection
+			    hconv=tbc[5][1]*k_per_cp*melt[1]/(mcdx*melt[3]); // h k dt / (cp dx k) = h dt / (cp dx)
+//printf("hconv %E for time %E if melt 1 is 1 then hconv %E\n",hconv,melt[1],hconv/melt[1]);
+			    for(i=fdmax[0];i>=0;i-=inter){
+				for(j=fdmax[1];j>=0;j-=inter)
+//printf("T %.f -> ",tgrid[1][i][j][k]);
+				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i][j][k-inter]-tgrid[0][i][j][k])-\
+						    hconv*(tbc[5][0]+tgrid[0][i][j][k]); // - (-Ta+Tnow)
+//printf("T %.f -> ",tgrid[1][i][j][k]);
+			    }
+			}else{ // tbc > 0 : heat sink
+			    for(i=fdmax[0];i>=0;i-=inter){
+				for(j=fdmax[1];j>=0;j-=inter)
+				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+						    (tgrid[0][i][j][k-inter]+tbc[5][0]-2*tgrid[0][i][j][k]);
+			    }
+			}
+		}
+// next -> now
+		for(i=fdmax[0];i>=0;i-=inter){
+			for(j=fdmax[1];j>=0;j-=inter){
+				for(k=fdmax[2];k>=0;k-=inter)
+					tgrid[0][i][j][k]=tgrid[1][i][j][k]; // dHfus is dH_fus / Cp
+		}	}
+	} // FDM 1 iteration
+	if(mode>0){ // if P_mode>0, single phase mode w/o accumulated latent heat
+	// Take averaged values for other voxels that are not included in the calculation
+	    temp[0]=fdmax[0];
+	    for(i=fdmax[0];i>=0;i--){
+		if(i<temp[0]-inter)
+		    temp[0]-=inter;
+		temp[1]=fdmax[1];
+
+		for(j=fdmax[1];j>=0;j--){
+		    if(j<temp[1]-inter)
+			temp[1]-=inter;
+		    temp[2]=fdmax[2];
+
+		    for(k=fdmax[2];k>=0;k--){
+			if(k<temp[2]-inter)
+			    temp[2]-=inter;
+			if(tgrid[1][i][j][k]<0)
+			    tgrid[0][i][j][k]=recover_temp(tgrid[0],i,j,k,inter,temp);
+		    }
+		}
+	    }
+	}
+
+	return;
+}
+
 

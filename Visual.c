@@ -3,7 +3,7 @@
 void graphout(int mode,int out[],int dir[],int melt,double rscale[],double frozen){// Graphics module
 	int i=0,j,k,n,module,tdir[3][2]={0},dir2[3]={0},ori[MAXDG1][MAXDG2][MAXDG3]={0};
 	int**** tgrid=NULL;
-	double haz[2]={0};
+	double haz[2]={0},tt;
 	double*** temp=NULL;
 	char fnam[30],info[30];
 	FILE *tfile=NULL;
@@ -27,6 +27,12 @@ void graphout(int mode,int out[],int dir[],int melt,double rscale[],double froze
 			scanf("%d",&n);
 
 			if(n==1){
+			    if(rscale[0]==4){ //SB heating
+				printf("Maximum T in the plot? (K)\n >>");
+				scanf("%lf",&tt);
+				melt=(int)tt;
+			    }
+
 			    for(n=0;n<=out[0];n=n+out[1]){
 				sprintf(fnam,"MCS%05d.tdat",n);
 				temp=read_Tmap(temp,dir,fnam,haz,-1,rscale[2]);
@@ -57,15 +63,16 @@ void graphout(int mode,int out[],int dir[],int melt,double rscale[],double froze
 			while(1){
 printf("\n\
   Which module?\n\
-      1 = Visualize grain morphology\n\
-      2 = Visualize temperature field\n\
-      3 = Calculate avg. grain size\n\
-      4 = Calculate interface position\n\
-      5 = Calculate PDAS (column thickness)\n\
-      6 = Calculate avg. temperature\n\
-      7 = Analyze oriention fraction\n\
-      8 = Convert \".dat\" file into \".vtk\" file\n\
-      9 = Convert \".tdat\" file into \".vtk\" file\n\
+      1  = Visualize grain morphology\n\
+      2  = Visualize temperature field\n\
+      3  = Calculate avg. grain size\n\
+      4  = Calculate interface position\n\
+      5  = Calculate PDAS (column thickness)\n\
+      6  = Calculate avg. temperature\n\
+      7  = Analyze oriention fraction\n\
+      8  = Convert \".dat\" file into \".vtk\" file\n\
+      9  = Convert \".tdat\" file into \".vtk\" file\n\
+      10 = Calculate Xl/solid fraction along axis\n\
       0 = Return to main menu...\n");
 // / 5 to draw texture pole figure / 0 to quit)\n);
 
@@ -73,7 +80,7 @@ printf("\n\
 				scanf("%d",&module);
 				if(module==0)
 					return;
-				else if(module>0 && module<=9)
+				else if(module>0 && module<=10)
 					break;
 				printf("Wrong input...\n\n");
 					return;
@@ -90,8 +97,9 @@ printf("\n\
 				scanf("%d",&n);
 				tgnu_plot(temp,fnam,dir,n,haz);
 			    }else if(module==6){
-				printf("Avg. T across the sample is: %.1f K: maximum %.1f K & minimun %.1f K\n\n",\
-					avgtcalc(temp,fnam,dir,0),avgtcalc(temp,fnam,dir,1),avgtcalc(temp,fnam,dir,2));
+				printf("Avg. T across the sample is: %.1f K: maximum %.1f K & minimum %.1f K\n\n",\
+					avgtcalc(temp,dir,0),avgtcalc(temp,dir,1),avgtcalc(temp,dir,2));
+//					avgtcalc(temp,fnam,dir,0),avgtcalc(temp,fnam,dir,1),avgtcalc(temp,fnam,dir,2));
 			    }else if(module==9)
 				convert_tdat(temp,dir);
 
@@ -233,6 +241,24 @@ printf("\n\
 					info[0]='\0';
 				    }else // Flood-Fill
 					i=(int)grainsize_ff(tgrid,dir,1);
+				}else if (module==10){ // calculate solid/Xl fraction at each X position
+				    tfile=fopen("xl.dat","w");
+				    fprintf(tfile,"X position\tXl voxels\tXl fraction\n");
+				    module=0;
+				    for(i=0;i<dir[0];i++){
+					n=0;
+					for(j=dir[1]-1;j>=0;j--){
+					    for(k=dir[2]-1;k>=0;k--){
+						if(tgrid[i][j][k][0]!=LIQORI)
+						    n++;
+					    }
+					}
+					fprintf(tfile,"%d  \t%d\t%E\n",i,n,(double)n/(dir[1]*dir[2]));
+					module+=n;
+				    }
+				    fprintf(tfile,"Total %d crystalline among %d voxels...\n",module,dir[0]*dir[1],dir[2]);
+				    fclose(tfile);
+				    puts("xl.dat file created...");
 				}
 				tgrid=free4d(dir[0],dir[1],dir[2],tgrid);
 			}
@@ -266,18 +292,21 @@ int gnu_plot(int**** tgrid,char fnam[],int dir[],int option){// Draw grain morph
 	}
 
 // 2D map
-fprintf(gpl,"set term postscript portrait \"Times-New-Roman\" 10 background rgb 'white'\n");
+//fprintf(gpl,"set term postscript portrait \"Times-New-Roman\" 10 background rgb 'white'\n");
+fprintf(gpl,"set term postscript eps \"Times-New-Roman\" 10 background rgb 'white'\n");
 fprintf(gpl,"set pm3d map\nset style data lines\nset nokey\n");
 fprintf(gpl,"set xtics border in scale 0,0 mirror norotate  autojustify\n");
 fprintf(gpl,"set ytics border in scale 0,0 mirror norotate  autojustify\n");
 fprintf(gpl,"set rtics axis in scale 0,0 nomirror norotate  autojustify\n");
-fprintf(gpl,"set cblabel \"Grain Orientation\"\n");
+fprintf(gpl,"set cblabel \"Grain Orientation\"font \"Time-New-Roman,20\" rotate by 270\n");
+//fprintf(gpl,"set cblabel \"Grain Orientation\"\n");
 fprintf(gpl,"set palette defined (%.1f \"red\", -0.01 \"black\", %.1f \"blue\", %.1f \"green\",%.1f \"orange\",%.1f \"yellow\", %.1f \"grey\")\n",LIQORI-1.0,0.25*maxdg,0.5*maxdg,0.75*maxdg,maxdg,(double)POWORI);
 fprintf(gpl,"set cbtics (\"(0,0,0)\" 0,\"(%d,%d,%d)\" %.1f)\n",MAXDG1,MAXDG2,MAXDG3,maxdg);
 fprintf(gpl,"set cbrange [ 0 : %.1f ] #noreverse nowriteback\n",maxdg);
 
 	if(option==1){
-	    fprintf(gpl,"set size 1.5,1.0\n");
+	    fprintf(gpl,"set size 1.5,1.5\n");
+//	    fprintf(gpl,"set size 1.5,1.0\n");
 
 	    printf("Which plane? (XY = 1, YZ = 2, XZ = 3)\n >> ");
 	    scanf("%d",&i);
@@ -337,39 +366,66 @@ fprintf(gpl,"set cbrange [ 0 : %.1f ] #noreverse nowriteback\n",maxdg);
 	  fclose(tfile);
 	  fclose(gpl);
 	}else{
-fprintf(gpl,"set size 1.8,1.0\n");
+fprintf(gpl,"set size 1.3,1.6\n");
+//fprintf(gpl,"set size 1.8,1.0\n");
 fprintf(gpl,"set output '%s.eps'\n",fnam);
 //fprintf(gpl,"set multiplot\n");
-fprintf(gpl,"set multiplot title \"%s\"\n",fnam);
+fprintf(gpl,"set multiplot\n");// title \"%s\"\n",fnam);
+fprintf(gpl,"set label \"%s\" at screen 0.65, 1.5 center font \"Time-New-Roman,15\" \n",fnam);
+//fprintf(gpl,"set multiplot title \"%s\"\n",fnam);
 fprintf(gpl,"unset colorbox\n");
 
 max=max_size(dir[0],dir[1]);
 fprintf(gpl,"set xrange[0:%d]\nset yrange[0:%d]\n",max,max);	// X-Y
+fprintf(gpl,"set title \"Upper X-Y Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0,0.96\nsplot 'XY2.dat' u 1:2:4 w image\n");	// Upper XY Surface
+fprintf(gpl,"set title \"Centre X-Y Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0,0.48\nsplot 'XY3.dat' u 1:2:4 w image\n");	// Centre XY Surface
+fprintf(gpl,"set title \"Lower X-Y Surface\"\nset size 0.4,0.6\n");
+/*
+ * :<<EOF
 fprintf(gpl,"set title \"Upper X-Y Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 0,0.6\nsplot 'XY2.dat' u 1:2:4 w image\n");	// Upper XY Surface
 fprintf(gpl,"set title \"Centre X-Y Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 0,0.3\nsplot 'XY3.dat' u 1:2:4 w image\n");	// Centre XY Surface
 fprintf(gpl,"set title \"Lower X-Y Surface\"\nset size 0.6,0.4\n");
+EOF*/
 fprintf(gpl,"set origin 0,0\nsplot 'XY1.dat' u 1:2:4 w image\n");	// Lower XY Surface
 
 max=max_size(dir[2],dir[1]);
 fprintf(gpl,"set xrange[0:%d]\nset yrange[0:%d]\n",max,max);	// Y-Z
+fprintf(gpl,"set title \"Upper Y-Z Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0.35,0.96\nsplot 'YZ2.dat' u 2:3:4 w image\n");	// Upper YZ Surface
+fprintf(gpl,"set title \"Centre Y-Z Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0.35,0.48\nsplot 'YZ3.dat' u 2:3:4 w image\n");	// Centre YZ Surface
+fprintf(gpl,"set title \"Lower Y-Z Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0.35,0\nsplot 'YZ1.dat' u 2:3:4 w image\n");	// Lower YZ Surface
+/*
 fprintf(gpl,"set title \"Upper Y-Z Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 0.5,0.6\nsplot 'YZ2.dat' u 2:3:4 w image\n");	// Upper YZ Surface
 fprintf(gpl,"set title \"Centre Y-Z Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 0.5,0.3\nsplot 'YZ3.dat' u 2:3:4 w image\n");	// Centre YZ Surface
 fprintf(gpl,"set title \"Lower Y-Z Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 0.5,0\nsplot 'YZ1.dat' u 2:3:4 w image\n");	// Lower YZ Surface
-
+*/
 max=max_size(dir[2],dir[0]);
-fprintf(gpl,"set colorbox\n");
+fprintf(gpl,"set colorbox user origin 1.1,0.15 size 0.02,1.2\nset cbtics font \"Time-New-Roman,15\"\n");
+//fprintf(gpl,"set colorbox\n");
 fprintf(gpl,"set xrange[0:%d]\nset yrange[0:%d]\n",max,max);	// Z-X
+fprintf(gpl,"set title \"Upper Z-X Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0.7,0.96\nsplot 'XZ2.dat' u 1:3:4 w image\n");	// Upper XZ Surface
+fprintf(gpl,"set title \"Centre Z-X Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0.7,0.48\nsplot 'XZ3.dat' u 1:3:4 w image\n");	// Centre XZ Surface
+fprintf(gpl,"set title \"Lower Z-X Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0.7,0\nsplot 'XZ1.dat' u 1:3:4 w image\n");	// Lower XZ Surface
+/*
 fprintf(gpl,"set title \"Upper Z-X Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 1,0.6\nsplot 'XZ2.dat' u 1:3:4 w image\n");	// Upper XZ Surface
 fprintf(gpl,"set title \"Centre Z-X Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 1,0.3\nsplot 'XZ3.dat' u 1:3:4 w image\n");	// Centre XZ Surface
 fprintf(gpl,"set title \"Lower Z-X Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 1,0\nsplot 'XZ1.dat' u 1:3:4 w image\n");	// Lower XZ Surface
+*/
 fclose(gpl);
 /*	Lower	Upper
 	XY1	XY2
@@ -428,9 +484,10 @@ fclose(gpl);
 	}fclose(tfile);
 //3D map
 gpl=fopen("gtemp2.in","w");
-fprintf(gpl,"set term postscript portrait \"Times-New-Roman\" 14 background rgb 'white'\n");
+//fprintf(gpl,"set term postscript portrait \"Times-New-Roman\" 14 background rgb 'white'\n");
+fprintf(gpl,"set term postscript eps \"Times-New-Roman\" 14 background rgb 'white'\n");
 fprintf(gpl,"set output '3d_%s.eps'\n",fnam);
-fprintf(gpl,"set size 1.5,1.0\n");
+//fprintf(gpl,"set size 1.5,1.0\n");
 fprintf(gpl,"set title \"%s\"\n",fnam);
 fprintf(gpl,"set pm3d\nset style data lines\nset nokey\n");
 max=max_size(dir[0],max_size(dir[1],dir[2]));
@@ -474,49 +531,88 @@ void tgnu_plot(double*** temp,char fnam[],int dir[],int melt,double haz[]){// Dr
 	else
 		mint=haz[0]-100;
 
-fprintf(gpl,"set term postscript portrait \"Times-New-Roman\" 10 background rgb 'white'\n");
+fprintf(gpl,"set term postscript eps \"Times-New-Roman\" 10 background rgb 'white'\n");
 fprintf(gpl,"set output 'Tmap_%s.eps'\n",fnam);
-fprintf(gpl,"set size 1.8,1.0\n");
+fprintf(gpl,"set size 1.3,1.6\n");
+//fprintf(gpl,"set term postscript portrait \"Times-New-Roman\" 10 background rgb 'white'\n");
+//fprintf(gpl,"set output 'Tmap_%s.eps'\n",fnam);
+//fprintf(gpl,"set size 1.8,1.0\n");
 fprintf(gpl,"set pm3d map\nset style data lines\nset nokey\n");
 fprintf(gpl,"set xtics border in scale 0,0 mirror norotate  autojustify\n");
 fprintf(gpl,"set ytics border in scale 0,0 mirror norotate  autojustify\n");
 fprintf(gpl,"set rtics axis in scale 0,0 nomirror norotate  autojustify\n");
 
+fprintf(gpl,"set cblabel \"Temperature\"font \"Time-New-Roman,24\" rotate by 270\n");
+	if(melt>maxt)
+fprintf(gpl,"set cbtics (\"%d K\" %f, \"%d K\" %f)\n",(int)mint,mint,(int)maxt,maxt);
+	else
+fprintf(gpl,"set cbtics (\"%d K\" %f, \"Tm(%d K)\" %f, \"%d K\" %f)\n",(int)mint,mint,(int)melt,melt,(int)maxt,maxt);
+fprintf(gpl,"set cbrange [ %.1f : %.1f ] noreverse nowriteback\n",mint,maxt);
+//fprintf(gpl,"set cbtics (\"%d K\" %f, \"Tm(%d K)\" %f, \"%d K\" %f)\n",(int)(0.5*melt),0.5*melt,(int)melt,melt,(int)maxt,maxt);
+//fprintf(gpl,"set cbrange [ %.1f : %.1f ] noreverse nowriteback\n",0.5*melt,maxt);
+
+/*
 fprintf(gpl,"set cblabel \"Temperature\"\n");
 fprintf(gpl,"set cbtics (\"%d K\" %f, \"Tm(%d K)\" %f, \"%d K\" %f)\n",(int)(0.5*melt),0.5*melt,(int)melt,melt,(int)maxt,maxt);
 fprintf(gpl,"set cbrange [ %.1f : %.1f ] noreverse nowriteback\n",0.5*melt,maxt);
+*/
 fprintf(gpl,"set palette defined (0 \"blue\", 1 \"green\", 2 \"yellow\", 3 \"orange\", 4\"red\")\n");
-fprintf(gpl,"set multiplot title \"%s\"\n",fnam);
-//fprintf(gpl,"set multiplot\n");
+//fprintf(gpl,"set multiplot title \"%s\"\n",fnam);
+//fprintf(gpl,"set title \"%s\"\n",fnam);
+fprintf(gpl,"set label \"%s\" at screen 0.65, 1.525 center font \"Time-New-Roman,15\"\n",fnam);
+fprintf(gpl,"set multiplot\n");
 fprintf(gpl,"unset colorbox\n");
 
 max=max_size(dir[0],dir[1]);
 fprintf(gpl,"set xrange[0:%d]\nset yrange[0:%d]\n",max,max);	// X-Y
+fprintf(gpl,"set title \"Upper X-Y Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0,0.96\nsplot 'tXY2.dat' u 1:2:4 w image\n");	// Upper XY Surface
+fprintf(gpl,"set title \"Centre X-Y Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0,0.48\nsplot 'tXY3.dat' u 1:2:4 w image\n");	// Centre XY Surface
+fprintf(gpl,"set title \"Lower X-Y Surface\"\nset size 0.4,0.6\n");
+/*
 fprintf(gpl,"set title \"Upper X-Y Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 0,0.6\nsplot 'tXY2.dat' u 1:2:4 w image\n");	// Upper XY Surface
 fprintf(gpl,"set title \"Centre X-Y Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 0,0.3\nsplot 'tXY3.dat' u 1:2:4 w image\n");	// Centre XY Surface
 fprintf(gpl,"set title \"Lower X-Y Surface\"\nset size 0.6,0.4\n");
+*/
 fprintf(gpl,"set origin 0,0\nsplot 'tXY1.dat' u 1:2:4 w image\n");	// Lower XY Surface
 
 max=max_size(dir[2],dir[1]);
 fprintf(gpl,"set xrange[0:%d]\nset yrange[0:%d]\n",max,max);	// Y-Z
+fprintf(gpl,"set title \"Upper Y-Z Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0.35,0.96\nsplot 'tYZ2.dat' u 2:3:4 w image\n");	// Upper YZ Surface
+fprintf(gpl,"set title \"Centre Y-Z Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0.35,0.48\nsplot 'tYZ3.dat' u 2:3:4 w image\n");	// Centre YZ Surface
+fprintf(gpl,"set title \"Lower Y-Z Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0.35,0\nsplot 'tYZ1.dat' u 2:3:4 w image\n");	// Lower YZ Surface
+/*
 fprintf(gpl,"set title \"Upper Y-Z Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 0.5,0.6\nsplot 'tYZ2.dat' u 2:3:4 w image\n");	// Upper YZ Surface
 fprintf(gpl,"set title \"Centre Y-Z Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 0.5,0.3\nsplot 'tYZ3.dat' u 2:3:4 w image\n");	// Centre YZ Surface
 fprintf(gpl,"set title \"Lower Y-Z Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 0.5,0\nsplot 'tYZ1.dat' u 2:3:4 w image\n");	// Lower YZ Surface
-
+*/
 max=max_size(dir[2],dir[0]);
-fprintf(gpl,"set colorbox\n");
+fprintf(gpl,"set colorbox user origin 1.1,0.15 size 0.02,1.2\nset cbtics font \"Time-New-Roman,15\"\n");
+//fprintf(gpl,"set colorbox\n");
 fprintf(gpl,"set xrange[0:%d]\nset yrange[0:%d]\n",max,max);	// Z-X
+fprintf(gpl,"set title \"Upper Z-X Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0.7,0.96\nsplot 'tXZ2.dat' u 1:3:4 w image\n");	// Upper XZ Surface
+fprintf(gpl,"set title \"Centre Z-X Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0.7,0.48\nsplot 'tXZ3.dat' u 1:3:4 w image\n");	// Centre XZ Surface
+fprintf(gpl,"set title \"Lower Z-X Surface\"\nset size 0.4,0.6\n");
+fprintf(gpl,"set origin 0.7,0\nsplot 'tXZ1.dat' u 1:3:4 w image\n");	// Lower XZ Surface
+/*
 fprintf(gpl,"set title \"Upper Z-X Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 1,0.6\nsplot 'tXZ2.dat' u 1:3:4 w image\n");	// Upper XZ Surface
 fprintf(gpl,"set title \"Centre Z-X Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 1,0.3\nsplot 'tXZ3.dat' u 1:3:4 w image\n");	// Centre XZ Surface
 fprintf(gpl,"set title \"Lower Z-X Surface\"\nset size 0.6,0.4\n");
 fprintf(gpl,"set origin 1,0\nsplot 'tXZ1.dat' u 1:3:4 w image\n");	// Lower XZ Surface
+*/
 fclose(gpl);
 
 /*	Lower	Upper
@@ -575,9 +671,12 @@ fclose(gpl);
 	}fclose(tfile);
 
 gpl=fopen("gT2.in","w");
-fprintf(gpl,"set term postscript portrait \"Times-New-Roman\" 14 background rgb 'white'\n");
+fprintf(gpl,"set term postscript eps \"Times-New-Roman\" 14 background rgb 'white'\n");
 fprintf(gpl,"set output '3d_Tmap_%s.eps'\n",fnam);
-fprintf(gpl,"set size 1.5,1.0\n");
+fprintf(gpl,"set size 1.5,1.5\n");
+//fprintf(gpl,"set term postscript portrait \"Times-New-Roman\" 14 background rgb 'white'\n");
+//fprintf(gpl,"set output '3d_Tmap_%s.eps'\n",fnam);
+//fprintf(gpl,"set size 1.5,1.0\n");
 fprintf(gpl,"set title \"%s\"\n",fnam);
 fprintf(gpl,"set pm3d\nset style data lines\nset nokey\n");
 max=max_size(dir[0],max_size(dir[1],dir[2]));
@@ -586,8 +685,13 @@ fprintf(gpl,"set xtics border in scale 0,0 mirror norotate  autojustify\n");
 fprintf(gpl,"set ytics border in scale 0,0 mirror norotate  autojustify\n");
 fprintf(gpl,"set ztics border in scale 0,0 mirror norotate  autojustify\n");
 fprintf(gpl,"set rtics axis in scale 0,0 nomirror norotate  autojustify\n");
-fprintf(gpl,"set cblabel \"Temperature\"\n");
+fprintf(gpl,"set cblabel \"Temperature\"font \"Time-New-Roman,15\"\n");
+//fprintf(gpl,"set cblabel \"Temperature\"\n");
+	if(melt>maxt)
+fprintf(gpl,"set cbtics (\"%d K\" %f, \"%d K\" %f)\n",(int)mint,mint,(int)maxt,maxt);
+	else
 fprintf(gpl,"set cbtics (\"%d K\" %f, \"Tm(%d K)\" %f, \"%d K\" %f)\n",(int)(0.5*melt),0.5*melt,(int)melt,melt,(int)maxt,maxt);
+//fprintf(gpl,"set cbtics (\"%d K\" %f, \"Tm(%d K)\" %f, \"%d K\" %f)\n",(int)(0.5*melt),0.5*melt,(int)melt,melt,(int)maxt,maxt);
 fprintf(gpl,"set cbrange [ %.1f : %.1f ] noreverse nowriteback\n",0.5*melt,maxt);
 fprintf(gpl,"set palette defined (0 \"blue\", 1 \"green\", 2 \"yellow\", 3 \"orange\", 4\"red\")\n");
 fprintf(gpl,"set xyplane at 0\n");
@@ -640,38 +744,6 @@ void text_plot(int**** tgrid,char fnam[],int dir[]){ // Draw texture pole figure
 	printf("Texture pole figure 'Pole_%s.eps' was created..\n\n",fnam);
 
 	return;
-}
-
-double avgtcalc(double*** temp,char fnam[],int dir[],int mode){
-	int i,j,k;
-	double avg=0;
-	
-    if(mode==0){
-	for(i=0;i<dir[0];i++){
-		for(j=0;j<dir[1];j++){
-			for(k=0;k<dir[2];k++)
-				avg+=temp[i][j][k];
-	}	}
-	return avg/(double)(dir[0]*dir[1]*dir[2]);
-    }
-    else if(mode==1){
-	for(i=0;i<dir[0];i++){
-		for(j=0;j<dir[1];j++){
-			for(k=0;k<dir[2];k++){
-				if(avg<temp[i][j][k])
-				    avg=temp[i][j][k];
-	}	}	}
-	return avg;
-    }else{ // if mode==2
-	avg=temp[0][0][0];
-	for(i=0;i<dir[0];i++){
-		for(j=0;j<dir[1];j++){
-			for(k=0;k<dir[2];k++){
-				if(avg>temp[i][j][k])
-				    avg=temp[i][j][k];
-	}	}	}
-	return avg;
-    }
 }
 
 void convert_tdat(double*** grid,int dir[]){

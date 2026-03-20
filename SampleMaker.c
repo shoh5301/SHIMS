@@ -331,15 +331,7 @@ else if(mode==5){	// Rotater
 	    }
 	    fileout(dir,grid,-1);
 	    return;
-/*	}else if(gnum[0]==3){ // Powder
-	    for(i=0;i<dir[0];i++){
-		for(j=0;j<dir[1];j++){
-		    for(k=0;k<dir[2];k++)
-			neworient_powder(grid[i][j][k]);
-		}
-	    }
-	    fileout(dir,grid,-1);
-	    return;*/
+	    
 	}else if(gnum[0]==4){ // single nucleus
 	    for(i=0;i<dir[0];i++){
 		for(j=0;j<dir[1];j++){
@@ -404,7 +396,7 @@ else if(mode==5){	// Rotater
 			for(k=dir[2]-1;k>=0;k--){
 			    grid[i][j][k][0]+=POWORI;
 			    grid[i][j][k][1]=POWORI;
-			    grid[i][j][k][1]=POWORI;
+			    grid[i][j][k][2]=POWORI;
 		}   }	}
 		printf("\nRandom Powder Pool Created...\n");
 	    }
@@ -519,15 +511,16 @@ int**** multiply(int**** grid,int dir[],char fnam[],int multi[],int mod){// Mult
 	printf("Apply new orientation? (1 to yes)\n >> ");
 	scanf("%d",&seed);
 
-if(seed==1){
-	seed=0;
-	printf("Start to count orientations...\n");
-	nsd0=(int*)malloc(dir[0]*dir[1]*dir[2]*sizeof(int));
-	nsd1=(int*)malloc(dir[0]*dir[1]*dir[2]*sizeof(int));
-	nsd2=(int*)malloc(dir[0]*dir[1]*dir[2]*sizeof(int));
-	for(i=0;i<dir[0];i++){
+	if(seed==1){ // apply new orientation
+	    seed=0;
+	    printf("Start to count orientations...\n");
+	    nsd0=(int*)malloc(dir[0]*dir[1]*dir[2]*sizeof(int));
+	    nsd1=(int*)malloc(dir[0]*dir[1]*dir[2]*sizeof(int));
+	    nsd2=(int*)malloc(dir[0]*dir[1]*dir[2]*sizeof(int));
+	    for(i=0;i<dir[0];i++){
 		for(j=0;j<dir[1];j++){
 			for(k=0;k<dir[2];k++){ // Count # of orientations
+			    if(tgrid[i][j][k][1]!=POWORI){
 				if(seed==0){
 					nsd0[seed]=tgrid[i][j][k][0];
 					nsd1[seed]=tgrid[i][j][k][1];
@@ -545,23 +538,23 @@ if(seed==1){
 						seed++;
 					}
 				}
+			    }
 			}
 		}	
-	}
+	    }
 
-	nori=alloc4d(multi[0],multi[1],multi[2],nori);
-	free(nsd0);
-	free(nsd1);
-	free(nsd2);
-
-	for(i=0;i<multi[0];i++){
+	    nori=alloc4d(multi[0],multi[1],multi[2],nori);
+	    free(nsd0);
+	    free(nsd1);
+	    free(nsd2);
+	    for(i=0;i<multi[0];i++){
 		for(j=0;j<multi[1];j++){
 			for(k=0;k<multi[2];k++)
 				neworient(nori[i][j][k]);
-	}	}
-	seed=1;
-}else
-	seed=0;
+	    }	}
+	    seed=1;
+	}else // multiply straightforward
+	    seed=0;
 
 	grid=alloc4d(m[0],m[1],m[2],grid);
 	for(i=0;i<m[0];i++){
@@ -570,9 +563,13 @@ if(seed==1){
 				if(((i/dir[0]==0)&&(j/dir[1]==0))&&(k/dir[2]==0))
 					voxcpy(grid[i][j][k],tgrid[i][j][k]);
 				else{
-					if(tgrid[i%dir[0]][j%dir[1]][k%dir[2]][1]==LIQORI)
+					if(tgrid[i%dir[0]][j%dir[1]][k%dir[2]][0]==LIQORI)
 						neworient_melting(grid[i][j][k]);
-					else if(seed==0)
+					else if(tgrid[i%dir[0]][j%dir[1]][k%dir[2]][1]==POWORI){
+					    grid[i][j][k][0]=POWORI;
+					    grid[i][j][k][1]=POWORI;
+					    grid[i][j][k][2]=POWORI;
+					}else if(seed==0)
 						voxcpy(grid[i][j][k],tgrid[i%dir[0]][j%dir[1]][k%dir[2]]);
 					else{
 						grid[i][j][k][0]=tgrid[i%dir[0]][j%dir[1]][k%dir[2]][0]+nori[i/dir[0]][j/dir[1]][k/dir[2]][0];

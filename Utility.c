@@ -1,5 +1,30 @@
 #include "Utility.h"
 
+double Xl_df(char eq[],double Tnow,double dHfus,double Tmax[],double T0){
+	char temp[200];
+
+	if(eq[0]=='d')
+	    return solidi_df(dHfus,Tnow,Tmax[0],Tmax[2],T0);
+	else{
+	    sprintf(temp,"%s",eq);
+	    var_ins(temp,Tnow,"T");
+	    return eval(temp);
+	}
+}
+
+double solidi_df(double dHfus,double Tnow,double Tliq,double Tfreez,double T0){
+	double Tsol;
+	if(Tfreez==0) // for pure element, no freezing range
+	    return dHfus*(1-Tnow/Tliq);
+	else{
+	    Tsol=Tliq-Tfreez;
+	    if(Tnow<Tsol)
+		return dHfus*(1-Tnow/T0); // assume linear proportional to T, where df=0 at T0
+	    else
+		return dHfus*(1-Tsol/T0)*(Tliq-Tnow)/Tfreez;
+	}
+}
+
 int prob_check(double prob){
 	if(prob<PROBMIN)
 	    return 0;
@@ -342,152 +367,7 @@ double misorient(int a,int b){
 double GBE(int delta,double cutoff,double GBEmax){
 	return (delta<cutoff) ? GBEmax*(1-log(delta/cutoff))*delta/cutoff : GBEmax;
 }
-
-/*double dendrite_dir(int const now[],int dir,double factor){ // return 0.5 for preferred direction
-// now = grid[x][y][z] // at this stage only [0] is used
-// dir: refer to nei26sel
-	int i=0,vector[2][3]={0};
-	double class=(double)MAXDG1/NNEI;
-
-	for(i=25;i>0;i--){
-		if(now[0]>=class*i)
-		    break;
-	}
-	// equivalent perpendicular directions
-//printf("i %d class %f vs. now %d vs. dir %d\n",i,class,now[0],dir);
-	if(i==dir) // preferred direction
-		return factor;
-	num_to_vector(i,vector[0]);
-	num_to_vector(dir,vector[1]);
-	if(vector[0][0]+vector[1][0]==0\
-	 &&vector[0][1]+vector[1][1]==0\
-	 &&vector[0][2]+vector[1][2]==0) // reverse direction
-		return factor;
-	if(inner_product(vector[0],vector[1])==0){ // perpendicular relationship
-		if((int)(rand()/(RAND_MAX/2+1))!=0) // preferred direction
-			return factor;
-		else // not preferred direction
-			return 1.0;
-	}
-	return 1.0;
-}
-
-void num_to_vector(int ori,int v[]){
-// Moore neighborhood (#26)
-	switch(ori){
-		case 0 :  // x-1 y-1 z-1
-			v[0]=-1;
-			v[1]=-1;
-			v[2]=-1;
-			break;
-		case 1 :  // x-1 y-1 z
-			v[0]=-1;
-			v[1]=-1;
-			break;
-		case 2 :  // x-1 y-1 z+1
-			v[0]=-1;
-			v[1]=-1;
-			v[2]=+1;
-                        break;
-		case 3 :  // x-1 y   z-1
-			v[0]=-1;
-			v[2]=-1;
-                        break;
-		case 4 :  // x-1 y   z
-			v[0]=-1;
-                        break;
-		case 5 :  // x-1 y   z+1
-			v[0]=-1;
-			v[2]=+1;
-                        break;
-		case 6 :  // x-1 y+1 z-1
-			v[0]=-1;
-			v[1]=+1;
-			v[2]=-1;
-                        break;
-		case 7 :  // x-1 y+1 z  
-			v[0]=-1;
-			v[1]=+1;
-                        break;
-		case 8 :  // x-1 y+1 z+1
-			v[0]=-1;
-			v[1]=+1;
-			v[2]=+1;
-                        break;
-		case 9 :  // x   y-1 z-1
-			v[1]=-1;
-			v[2]=-1;
-                        break;
-		case 10 : // x   y-1 z  
-			v[1]=-1;
-                        break;
-		case 11 : // x   y-1 z+1
-			v[1]=-1;
-			v[2]=+1;
-                        break;
-		case 12 : // x   y   z-1
-			v[2]=-1;
-                        break;
-		case 13 : // x   y   z+1
-			v[2]=+1;
-                        break;
-		case 14 : // x   y+1 z-1
-			v[1]=+1;
-			v[2]=-1;
-                        break;
-		case 15 : // x   y+1 z  
-			v[1]=+1;
-                        break;
-		case 16 : // x   y+1 z+1
-			v[1]=+1;
-			v[2]=+1;
-                        break;
-		case 17 : // x+1 y-1 z-1
-			v[0]=+1;
-			v[1]=-1;
-			v[2]=-1;
-                        break;
-		case 18 : // x+1 y-1 z  
-			v[0]=+1;
-			v[1]=-1;
-                        break;
-		case 19 : // x+1 y-1 z+1
-			v[0]=+1;
-			v[1]=-1;
-			v[2]=+1;
-                        break;
-		case 20 : // x+1 y   z-1
-			v[0]=+1;
-			v[2]=-1;
-                        break;
-		case 21 : // x+1 y   z  
-			v[0]=+1;
-                        break;
-		case 22 : // x+1 y   z+1
-			v[0]=+1;
-			v[2]=+1;
-                        break;
-		case 23 : // x+1 y+1 z-1
-			v[0]=+1;
-			v[1]=+1;
-			v[2]=-1;
-                        break;
-		case 24 : // x+1 y+1 z  
-			v[0]=+1;
-			v[1]=+1;
-                        break;
-		case 25 ://25x+1 y+1 z+1
-			v[0]=+1;
-			v[1]=+1;
-			v[2]=+1;
-                        break;
-		default:
-puts("ERROR: wrong random number over 25 for num_to_vector function...");
-			break;
-	}
-	return;
-}
-
+/*
 double IFE_aniso(double gamma,double factor,int predir){ //maxdir==1 for prefered direction
 	return (predir==0)? gamma : gamma*factor;
 }*/
@@ -507,8 +387,8 @@ int nucl_cond(int**** grid,int x,int y,int z,int dir[],int pbc[],int situation){
 		m=y;
 		n=z;
 		nei26sel(i,&l,&m,&n,dir,pbc);
-		if(grid[l][m][n][0]==PTCLORI) // PARTICLE exist
-		    return PTCLORI;
+//		if(grid[l][m][n][0]==PTCLORI) // PARTICLE exist
+//		    return PTCLORI;
 	    }
 	    for(i=25;i>=0;i--){
 		l=x;
@@ -729,23 +609,43 @@ int latent_heat_check(double*** tgrid,int dir[]){
 	return 0;
 }
 
+double avgtcalc(double*** temp,int dir[],int mode){
+	int i,j,k;
+	double avg=0;
+	
+    if(mode==0){
+	for(i=0;i<dir[0];i++){
+		for(j=0;j<dir[1];j++){
+			for(k=0;k<dir[2];k++)
+				avg+=temp[i][j][k];
+	}	}
+	return avg/(double)(dir[0]*dir[1]*dir[2]);
+    }
+    else if(mode==1){
+	for(i=0;i<dir[0];i++){
+		for(j=0;j<dir[1];j++){
+			for(k=0;k<dir[2];k++){
+				if(avg<temp[i][j][k])
+				    avg=temp[i][j][k];
+	}	}	}
+	return avg;
+    }else{ // if mode==2
+	avg=temp[0][0][0];
+	for(i=0;i<dir[0];i++){
+		for(j=0;j<dir[1];j++){
+			for(k=0;k<dir[2];k++){
+				if(avg>temp[i][j][k])
+				    avg=temp[i][j][k];
+	}	}	}
+	return avg;
+    }
+}
+
 double average_temp(double*** temp,int x,int y,int z,int inter,int dir[],int pbc[]){
 	int i,j,k,o;
 	double sum=0,n=1;
 	
 	sum=temp[x][y][z];
-/*	for(o=5;o>=0;o--){ // for FDM average, VN neighborhood is only considered
-	// Assuming that their influence is half of original positiona
-	    i=x;
-	    j=y;
-	    k=z;
-	    nei6sel(o,&i,&j,&k,dir,pbc);
-	    if(i!=x || j!=y || k!=z){
-		sum=0.5*temp[i][j][k];
-		n+=0.5;
-	    }
-	}
-*/
 	o=inter/2;
 	for(i=deter(x-o,dir[0],pbc[0]);i<=deter(x+o,dir[0],pbc[0]);i++){
 	    for(j=deter(y-o,dir[1],pbc[1]);j<=deter(y+o,dir[1],pbc[1]);j++){
@@ -927,50 +827,6 @@ int**** read_info(int**** grid,int dir[],char file[]){// Read grain info.
 
 	return grid;
 }
-/*
-int**** read_infoPrev(int**** grid,int dir[],char file[]){// Read grain info.
-	// old version of MCS.dat
-	int i=0,j=0,k=0,maxi=0,maxj=0,maxk=0,deg[3]={0};
-	FILE* input=NULL;
-
-	input=fopen(file,"r");
-	printf("\nLoad input file \"%s\"...\n",file);
-if(dir[0]==0){
-	while(feof(input)==0){
-		fscanf(input,"%d\t%d\t%d\t%d\t%d\t%d\n",&i,&j,&k,&deg[0],&deg[1],&deg[2]);
-		if(i>maxi)
-			maxi=i;
-		if(j>maxj)
-			maxj=j;
-		if(k>maxk)
-			maxk=k;
-	}
-	rewind(input);
-	dir[0]=maxi+1;
-	dir[1]=maxj+1;
-	dir[2]=maxk+1;
-	printf(" ( Site = %d x %d x %d ) ",dir[0],dir[1],dir[2]);
-}
-	grid=alloc4d(dir[0],dir[1],dir[2],grid); //grid allocation
-
-	while(feof(input)==0){
-		fscanf(input,"%d\t%d\t%d\t%d\t%d\t%d\n",&i,&j,&k,&deg[0],&deg[1],&deg[2]);
-		if(deg[0]==0){ // 0 0 0 is for liquid
-			grid[i][j][k][0]=-1;
-			grid[i][j][k][1]=-1;
-			grid[i][j][k][2]=-1;
-		}else{
-			grid[i][j][k][0]=deg[0];
-			grid[i][j][k][1]=deg[1];
-			grid[i][j][k][2]=deg[2];
-		}
-	}
-	printf("successfully loaded...!!!\n",file);
-	fclose(input);
-
-	return grid;
-}
-// */
 
 double*** read_Tmap(double*** temp,int dir[],char file[],double range[],int mode,double Tmelt){
 // mode 0 for drawing 1 to apply for sim. -1 for drawing after sim.
@@ -1389,45 +1245,6 @@ void fileout(int dir[],int**** grid,int mcs){// Make MCS.dat file
 	return;
 }
 
-/*
-void fileoutPrev(int dir[],int**** grid,int mcs){// Make MCS.dat file
-	char fnam[30];
-	int i,j,k;
-	FILE* data=NULL;
-
-	if(mcs>=0){
-		sprintf(fnam,"MCS%05d.dat",mcs);
-		printf("    \"%s\" file was created...\n",fnam);
-		data=fopen(fnam,"w");
-		for(i=0;i<dir[0];i++){
-		for(j=0;j<dir[1];j++){
-			for(k=0;k<dir[2];k++){
-				if(grid[i][j][k][0]<=0) // liquid is 0 0 0
-					fprintf(data,"%d\t%d\t%d\t%d\t%d\t%d\n",i,j,k,0,0,0);
-				else
-					fprintf(data,"%d\t%d\t%d\t%d\t%d\t%d\n",i,j,k,grid[i][j][k][0],grid[i][j][k][1],grid[i][j][k][2]);
-			}
-		}}
-		fclose(data);
-	}else{
-		i=get_file(fnam,-1);
-		printf("    \"%s\" file was created...\n\n",fnam);
-		data=fopen(fnam,"w");
-		for(i=0;i<dir[0];i++){
-		for(j=0;j<dir[1];j++){
-			for(k=0;k<dir[2];k++){
-				if(grid[i][j][k][0]<=0) // liquid is 0 0 0
-					fprintf(data,"%d\t%d\t%d\t%d\t%d\t%d\n",i,j,k,0,0,0);
-				else
-					fprintf(data,"%d\t%d\t%d\t%d\t%d\t%d\n",i,j,k,grid[i][j][k][0],grid[i][j][k][1],grid[i][j][k][2]);
-			}
-		}}
-		fclose(data);
-	}
-	return;
-}
-// */
-
 void QS(double arr[], int left, int right){//quick sort
 	double pivot=arr[left];
 	double temp;
@@ -1478,11 +1295,16 @@ void tok(char* line,char* word){
 }
 
 double grainsize_ff(int**** const grid,int dir[],int mode){ // Grain distribution by flood-fill algorithm
-	int i,j,k,l=0,gnum=0,num[2]={0},sum[2]={0},lim[6]={0},cnt,len[3],pbc[3];
-	double aratio[2],asum=0,ratio=0,vavg[3],ravg[2],dev[2]={0},size;
+	int i,j,k,l=0,gnum=0,num[2]={0},sum[2]={0},lim[6]={0},cnt,len[3],pbc[3],shape;
+	double aratio[2],asum=0,ratio=0,vavg[3],ravg[2],dev[2]={0},size,min;
 	int*** checker=NULL;
-	char term[10]={'\0'};
+	double** popul=NULL;
+	char term[10]={'\0'},line[500]={'\0'};
+	Pos *stack=NULL;
+	FILE* log=NULL;
 // size 0=number of sites in x dir // 1=in y dir // 2=total MCS // 3=mapout
+
+	stack=(Pos*)malloc(sizeof(Pos)*dir[0]*dir[1]*dir[2]);
 
 	checker=(int***)malloc(dir[0]*sizeof(int**));
 	for(i=0;i<dir[0];i++){
@@ -1495,10 +1317,10 @@ double grainsize_ff(int**** const grid,int dir[],int mode){ // Grain distributio
 	for(k=0;k<dir[2];k++){
 	    for(j=0;j<dir[1];j++){
 		for(i=0;i<dir[0];i++){
-			if(grid[i][j][k][0]!=LIQORI && checker[i][j][k]==0){ // grains not yet measured, no liquid
+			if(grid[i][j][k][0]!=LIQORI && grid[i][j][k][1]!=POWORI && checker[i][j][k]==0){ // grains not yet measured, no liquid
 				gnum++;
 				cnt=0;
-				DFS_array_simple(dir,i,j,k,grid[i][j][k][0],grid,checker,&cnt,pbc);
+				DFS_array_quick(dir,i,j,k,grid[i][j][k][0],grid,checker,&cnt,stack,pbc);
 				l+=cnt;
 			}
 		}
@@ -1511,6 +1333,8 @@ double grainsize_ff(int**** const grid,int dir[],int mode){ // Grain distributio
 	// else then ratio=0
 
     }else{ // from Auxiliary module
+
+	log=fopen("GrainSize.dat","w");
 	printf(" ### NOTE: PBC is not considered ###\n");
 /*	while(j==0){
 		j=1;
@@ -1526,29 +1350,46 @@ double grainsize_ff(int**** const grid,int dir[],int mode){ // Grain distributio
 		}
 	}
 */
-	printf("Minimum aspect ratio for columnar grains?\n");
+
+	printf("Minimum volume of grain to count? (unit voxel)\n Vmin = ");
+	scanf("%lf",&min);
+
+	printf("Minimum aspect ratio for columnar grains? (input 0 to ignore this option)\n ratio = ");
 	scanf("%lf",&ratio);
 
-	aratio[0]=1/ratio;
-	aratio[1]=ratio;
+	if(ratio!=0){
+	    aratio[0]=1/ratio;
+	    aratio[1]=ratio;
+	}
+
+	printf("Assumption of Grain Shape? (1 = sphere, 2 = cube)\n >> ");
+	scanf("%d",&shape);
+	fprintf(log,"ID# Volume(voxel) est.%s\n",term);
+
+	printf("NOTE: PBC IS NOT CONSIDERED...\n");
+	pbc[0]=0;
+	pbc[1]=0;
+	pbc[2]=0;
 
 	for(k=0;k<dir[2];k++){
 	    for(j=0;j<dir[1];j++){
 		for(i=0;i<dir[0];i++){
-			if(grid[i][j][k][0]!=LIQORI && checker[i][j][k]==0){ // grains not yet measured, not liquid
+			if(grid[i][j][k][0]!=LIQORI && grid[i][j][k][1]!=POWORI && checker[i][j][k]==0){ // grains not yet measured, not liquid nor powder
+			    lim[0]=i; // x min
+			    lim[1]=i; // x max
+			    lim[2]=j; // y min
+			    lim[3]=j; // y max
+			    lim[4]=k; // z min
+			    lim[5]=k; // z max
+			    cnt=0;
+			    DFS_array(dir,i,j,k,grid[i][j][k][0],grid,checker,lim,&cnt,stack,pbc);
+			    if((double)cnt>=min){
 				gnum++;
-				lim[0]=i; // x min
-				lim[1]=i; // x max
-				lim[2]=j; // y min
-				lim[3]=j; // y max
-				lim[4]=k; // z min
-				lim[5]=k; // z max
-				cnt=0;
-				DFS_array(dir,i,j,k,grid[i][j][k][0],grid,checker,lim,&cnt,pbc);
-				len[0]=lim[1]-lim[0]+1; // x len
-				len[1]=lim[3]-lim[2]+1; // y len
-				len[2]=lim[5]-lim[4]+1; // z len
-				if(len[0]>=len[1]){
+				if(ratio!=0){
+				    len[0]=lim[1]-lim[0]+1; // x len
+				    len[1]=lim[3]-lim[2]+1; // y len
+				    len[2]=lim[5]-lim[4]+1; // z len
+				    if(len[0]>=len[1]){
 					if(len[0]<=len[2]) // len[2] > len[0] > len[1]
 						ratio=(double)len[2]/(double)len[1];
 					else{ // len [2] < len [0] > len[1]
@@ -1557,7 +1398,7 @@ double grainsize_ff(int**** const grid,int dir[],int mode){ // Grain distributio
 						else
 							ratio=(double)len[0]/(double)len[1];
 					}
-				}else{ // len[0] < len[1]
+				    }else{ // len[0] < len[1]
 					if(len[1]<=len[2]) // len[2] > len[1] > len[0]
 						ratio=(double)len[2]/(double)len[0];
 					else{ // len [2] < len [1] > len[0]
@@ -1566,92 +1407,108 @@ double grainsize_ff(int**** const grid,int dir[],int mode){ // Grain distributio
 						else
 							ratio=(double)len[1]/(double)len[0];
 					}
-				}
-				if(ratio>aratio[0]&&ratio<aratio[1]){ // equiaxed
+				    }
+				   if(ratio>aratio[0]&&ratio<aratio[1]){ // equiaxed
 					num[0]++;
-					sum[0]=sum[0]+cnt;
-				}else{ //columnar
+					sum[0]+=cnt;
+				   }else{ //columnar
 					num[1]++;
-					sum[1]=sum[1]+cnt;
-					asum=asum+ratio;
-				}
+					sum[1]+=cnt;
+					asum+=ratio;
+				    }
+				}else
+				    sum[0]+=cnt;
+				fprintf(log,"%d  %d  ",gnum,cnt);
+				if(shape==1)
+				    fprintf(log,"%.2f\n",pow(0.75*(double)cnt/M_PI,1.0/3.0)*2.0);
+				else
+				    fprintf(log,"%.2f\n",pow((double)cnt,1.0/3.0));
+			    }
 			}
 		}
 	    }
 	}
+	fclose(log);
 
-if(gnum==0)
-	printf("No solid grains in the sample...\n");
-else{
-	vavg[0]=(double)(sum[0]+sum[1])/(double)gnum; //total
-	vavg[1]=(double)sum[0]/(double)num[0]; //equiaxed
-	vavg[2]=(double)sum[1]/(double)num[1]; //columnar
 
-// STDEV
-	printf("Assumption of Grain Shape? (1 = sphere, 2 = cube)\n >> ");
-	scanf("%d",&i);
-
-	if(i==1){
-	    ravg[0]=pow(0.75*vavg[0]/M_PI,1.0/3.0)*2.0; //total
-	    ravg[1]=pow(0.75*vavg[1]/M_PI,1.0/3.0)*2.0; // equiaxed
-	    sprintf(term,"diameter");
+	if(ratio!=0){
+		vavg[0]=(double)(sum[0]+sum[1])/(double)gnum; //total
+		vavg[1]=(double)sum[0]/(double)num[0]; //equiaxed
+		vavg[2]=(double)sum[1]/(double)num[1]; //columnar
+		if(shape==1){
+		    ravg[0]=pow(0.75*vavg[0]/M_PI,1.0/3.0)*2.0; //total
+		    ravg[1]=pow(0.75*vavg[1]/M_PI,1.0/3.0)*2.0; // equiaxed
+		    sprintf(term,"diameter");
+		}else{
+		    ravg[0]=pow(vavg[0],1.0/3.0); //total
+		    ravg[1]=pow(vavg[1],1.0/3.0); // equiaxed
+		    sprintf(term,"size");
+		}
 	}else{
-	    ravg[0]=pow(vavg[0],1.0/3.0); //total
-	    ravg[1]=pow(vavg[1],1.0/3.0); // equiaxed
-	    sprintf(term,"size");
+		vavg[0]=(double)sum[0]/(double)gnum;
+		if(shape==1){
+		    ravg[0]=pow(0.75*vavg[0]/M_PI,1.0/3.0)*2.0; //total
+		    sprintf(term,"diameter");
+		}else{
+		    ravg[0]=pow(vavg[0],1.0/3.0); //total
+		    sprintf(term,"size");
+		}
 	}
 
-	for(k=dir[2]-1;k>=0;k--){
-	    for(j=dir[1]-1;j>=0;j--){
-		for(i=dir[0]-1;i>=0;i--){
+	if(gnum==0)
+	    printf("No solid grains in the sample...\n");
+	else{
+// STDEV
+	    for(k=dir[2]-1;k>=0;k--){
+		for(j=dir[1]-1;j>=0;j--){
+		    for(i=dir[0]-1;i>=0;i--){
 			checker[i][j][k]=0;
-	}   }   }
+	    }   }   }
 
-	for(k=0;k<dir[2];k++){
-	    for(j=0;j<dir[1];j++){
-		for(i=0;i<dir[0];i++){
-		    if(grid[i][j][k][0]!=LIQORI && checker[i][j][k]==0){ // grains not yet measured, not liquid
-			lim[0]=i; // x min
-			lim[1]=i; // x max
-			lim[2]=j; // y min
-			lim[3]=j; // y max
-			lim[4]=k; // z min
-			lim[5]=k; // z max
-			cnt=0;
-			DFS_array(dir,i,j,k,grid[i][j][k][0],grid,checker,lim,&cnt,pbc);
-			len[0]=lim[1]-lim[0]+1; // x len
-			len[1]=lim[3]-lim[2]+1; // y len
-			len[2]=lim[5]-lim[4]+1; // z len
-			if(len[0]>=len[1]){
-				if(len[0]<=len[2]) // len[2] > len[0] > len[1]
-					ratio=(double)len[2]/(double)len[1];
-				else{ // len [2] < len [0] > len[1]
-					if(len[1]>=len[2])
+	    for(k=0;k<dir[2];k++){
+		for(j=0;j<dir[1];j++){
+		    for(i=0;i<dir[0];i++){
+			if(grid[i][j][k][0]!=LIQORI && grid[i][j][k][1]!=POWORI && checker[i][j][k]==0){ // grains not yet measured, not liquid
+			    lim[0]=i; // x min
+			    lim[1]=i; // x max
+			    lim[2]=j; // y min
+			    lim[3]=j; // y max
+			    lim[4]=k; // z min
+			    lim[5]=k; // z max
+			    cnt=0;
+			    DFS_array(dir,i,j,k,grid[i][j][k][0],grid,checker,lim,&cnt,stack,pbc);
+			    if((double)cnt>=min){
+				if(ratio!=0){
+				    len[0]=lim[1]-lim[0]+1; // x len
+				    len[1]=lim[3]-lim[2]+1; // y len
+				    len[2]=lim[5]-lim[4]+1; // z len
+				    if(len[0]>=len[1]){
+					if(len[0]<=len[2]) // len[2] > len[0] > len[1]
+					    ratio=(double)len[2]/(double)len[1];
+					else{ // len [2] < len [0] > len[1]
+					    if(len[1]>=len[2])
 						ratio=(double)len[0]/(double)len[2];
-					else
+					    else
 						ratio=(double)len[0]/(double)len[1];
-				}
-			}else{ // len[0] < len[1]
-				if(len[1]<=len[2]) // len[2] > len[1] > len[0]
-					ratio=(double)len[2]/(double)len[0];
-				else{ // len [2] < len [1] > len[0]
-					if(len[0]>=len[2])
+					}
+				    }else{ // len[0] < len[1]
+					if(len[1]<=len[2]) // len[2] > len[1] > len[0]
+					    ratio=(double)len[2]/(double)len[0];
+					else{ // len [2] < len [1] > len[0]
+					    if(len[0]>=len[2])
 						ratio=(double)len[1]/(double)len[2];
-					else
+					    else
 						ratio=(double)len[1]/(double)len[0];
-				}
+					}
+				    }
+				    dev[0]+=(((double)cnt-vavg[0])*((double)cnt-vavg[0]));
+				    if(ratio>aratio[0]&&ratio<aratio[1]) // equiaxed
+					dev[1]+=(((double)cnt-vavg[1])*((double)cnt-vavg[1]));
+
+				}else
+				    dev[0]+=(((double)cnt-vavg[0])*((double)cnt-vavg[0]));
+			    }
 			}
-			// cnt == volume (voxels)
-/*			if(term[0]=='d') // sphere assumption
-			    size=pow(0.75*cnt/M_PI,1.0/3.0)*2.0;
-			else
-			    size=pow(cnt,1.0/3.0);
-			dev[0]+=((size-ravg[0])*(size-ravg[0]));
-			if(ratio>aratio[0]&&ratio<aratio[1]) // equiaxed
-			    dev[1]+=((size-ravg[1])*(size-ravg[1]));*/
-			dev[0]+=((cnt-vavg[0])*(cnt-vavg[0]));
-			if(ratio>aratio[0]&&ratio<aratio[1]) // equiaxed
-			    dev[1]+=((cnt-vavg[1])*(cnt-vavg[1]));
 		    }
 		}
 	    }
@@ -1659,22 +1516,68 @@ else{
 
 	if(term[0]=='d'){ // sphere assumption
 	    dev[0]=(2.0/3.0)*sqrt(dev[0]/(double)gnum)/(ravg[0]*ravg[0]*0.25); // for sphere diameter
-	    dev[1]=(2.0/3.0)*sqrt(dev[1]/(double)gnum)/(ravg[1]*ravg[1]*0.25); // for sphere diameter
+	    if(ratio!=0)
+		dev[1]=(2.0/3.0)*sqrt(dev[1]/(double)num[0])/(ravg[1]*ravg[1]*0.25); // for sphere diameter
 	}else{ // cube
 	    dev[0]=(1.0/3.0)*sqrt(dev[0]/(double)gnum)/(ravg[0]*ravg[0]); // for cube size
-	    dev[1]=(1.0/3.0)*sqrt(dev[1]/(double)gnum)/(ravg[1]*ravg[1]); // for cube size
+	    if(ratio!=0)
+		dev[1]=(1.0/3.0)*sqrt(dev[1]/(double)num[0])/(ravg[1]*ravg[1]); // for cube size
 	}
 
-	printf("\n# Total %d grains, avg. grain %s %.2f ±%.2E  x unit length #\n",\
-			gnum,term,ravg[0],dev[0]);
-	printf("Equiaxed: total %d grains, total volume fraction %f\n       \
-	avg. volume %.2f voxels (avg. %s %.2f ±%.2E  x unit length)\n",\
-			num[0],(double)sum[0]/(double)(sum[0]+sum[1]),\
-	vavg[1],term,ravg[1],dev[1]);
-	printf("Columnar: total %d grains, total volume fraction %f\n      \
-	avg. volume %.2f voxels (avg. aspect ratio %.2f)\n\n",num[1],(double)sum[1]/(double)(sum[0]+sum[1]),\
-	vavg[1],asum/(double)num[1]);
-}
+	printf("\n\n# Total %d grains, avg. grain %s %.2f ±%.2E  x unit length // minimum size cutoff %.1f x unit length #\n",gnum,term,ravg[0],dev[0],min);
+	if(ratio!=0){
+	    printf("  Equiaxed: total %d grains, total volume fraction %f\n       avg. volume %.2f voxels (avg. %s %.2f ±%.2E  x unit length)\n",\
+											    num[0],(double)sum[0]/(double)(sum[0]+sum[1]),vavg[1],term,ravg[1],dev[1]);
+	    printf("  Columnar: total %d grains, total volume fraction %f\n       avg. volume %.2f voxels (avg. aspect ratio %.2f)\n\n",\
+											    num[1],(double)sum[1]/(double)(sum[0]+sum[1]),vavg[1],asum/(double)num[1]);
+	}
+
+	printf("  'GrainSize.dat' file is generated...\n Output %s histogram? (1 = yes)\n >> ",term);
+	scanf("%d",&i);
+
+	if(i==1){
+	    printf("Bin size for histogram?\n Nbin = ");
+	    scanf("%lf",&size);
+
+	    popul=(double**)calloc(4,sizeof(double*));
+	    popul[0]=(double*)calloc(gnum,sizeof(double));
+	    popul[1]=(double*)calloc(gnum,sizeof(double));
+
+	    min=0;
+	    log=fopen("GrainSize.dat","r");
+	    fgets(line,sizeof(line),log); // first line
+	    while(fscanf(log,"%d  %d  %lf\n",&i,&j,&asum)!=EOF){
+		popul[0][i-1]=asum; // save grain size info
+		popul[1][i-1]=(double)j; // save grain volume info
+		if(min<asum)
+		    min=asum;
+	    }
+	    fclose(log);
+
+	    cnt=(int)((min-1.0)/size)+1;
+
+	    popul[2]=(double*)calloc(cnt,sizeof(double));
+	    popul[3]=(double*)calloc(cnt,sizeof(double));
+	    for(i=gnum-1;i>=0;i--){
+		popul[2][(int)((popul[0][i]-1.0)/size)]++; // frequency
+		popul[3][(int)((popul[0][i]-1.0)/size)]+=popul[1][i]; // volume fraction
+	    }
+
+	    if(ratio!=0)
+		sum[0]+=sum[1];
+
+	    log=fopen("Distr_GrainSize.dat","w");
+	    fprintf(log,"Grain %s (voxel)\nFrom    To      Median  Population  Population(%) VolFraction(%)\n",term);
+
+	    for(i=0;i<cnt;i++)
+		fprintf(log,"%6.2f  %6.2f  %6.2E  %9d  %E  %E\n",(double)i*size+1.0,(double)(i+1)*size+1.0,((double)i+0.5)*size+1.0,(int)popul[2][i],popul[2][i]/(double)gnum,popul[3][i]/(double)sum[0]);
+
+	    fclose(log);
+
+	    for(i=0;i<4;i++)
+		free(popul[i]);
+	    free(popul);
+	}
     }
 	for(i=0;i<dir[0];i++){
 		for(j=0;j<dir[1];j++)
@@ -1682,88 +1585,131 @@ else{
 		free(checker[i]);
 	}
 	free(checker);
+	free(stack);
 	return ratio;
 }
 
-void DFS_array_simple(int con[],int x,int y,int z,int gori,int**** const grid,int*** checker,int* cnt,int pbc[]){
-// Does not consider diagonal direction connection since such a connect bridge may unstable considering GB curvature effect
-	checker[x][y][z]=1;
-	*cnt=*cnt+1;
-	
-    if(z<con[2]-1){
-	if(gori==grid[x][y][z+1][0]&&checker[x][y][z+1]==0)
-		DFS_array_simple(con,x,y,z+1,gori,grid,checker,cnt,pbc);
-    }
-    if(y<con[1]-1){
-	if(gori==grid[x][y+1][z][0]&&checker[x][y+1][z]==0)
-		DFS_array_simple(con,x,y+1,z,gori,grid,checker,cnt,pbc);
-    }
-    if(x<con[0]-1){
-	if(gori==grid[x+1][y][z][0]&&checker[x+1][y][z]==0)
-		DFS_array_simple(con,x+1,y,z,gori,grid,checker,cnt,pbc);
-    }
-    if(z>0){
-	if(gori==grid[x][y][z-1][0]&&checker[x][y][z-1]==0)
-		DFS_array_simple(con,x,y,z-1,gori,grid,checker,cnt,pbc);
-    }
-    if(y>0){
-	if(gori==grid[x][y-1][z][0]&&checker[x][y-1][z]==0)
-		DFS_array_simple(con,x,y-1,z,gori,grid,checker,cnt,pbc);
-    }
-    if(x>0){
-	if(gori==grid[x-1][y][z][0]&&checker[x-1][y][z]==0)
-		DFS_array_simple(con,x-1,y,z,gori,grid,checker,cnt,pbc);
+void DFS_array_quick(int con[],int start_x, int start_y, int start_z, int gori, int**** const grid, int*** checker, int* cnt, Pos* stack,int pbc[]) {
+    long top = -1; // 스택의 현재 위치 (맨 위)
+
+    // 1. 시작점 넣기 (Push)
+    stack[++top] = (Pos){start_x, start_y, start_z};
+    checker[start_x][start_y][start_z] = 1; // 방문 표시
+    *cnt = 1;
+    while (top >= 0) {
+        Pos curr = stack[top--];
+
+        int dx[] = {1, -1, 0, 0, 0, 0};
+        int dy[] = {0, 0, 1, -1, 0, 0};
+        int dz[] = {0, 0, 0, 0, 1, -1};
+
+        for (int i = 0; i < 6; i++) {
+            int nx = curr.x + dx[i];
+            int ny = curr.y + dy[i];
+            int nz = curr.z + dz[i];
+
+            // --- PBC 처리 구간 ---
+            // x방향 PBC가 켜져있다면 (pbc[0] == 1)
+            if (pbc[0]) {
+                if (nx < 0) nx = con[0] - 1;
+                else if (nx >= con[0]) nx = 0;
+            } else {
+                if (nx < 0 || nx >= con[0]) continue; // PBC 꺼져있으면 무시
+            }
+
+            // y방향 PBC (pbc[1] == 1)
+            if (pbc[1]) {
+                if (ny < 0) ny = con[1] - 1;
+                else if (ny >= con[1]) ny = 0;
+            } else {
+                if (ny < 0 || ny >= con[1]) continue;
+            }
+
+            // z방향 PBC (pbc[2] == 1)
+            if (pbc[2]) {
+                if (nz < 0) nz = con[2] - 1;
+                else if (nz >= con[2]) nz = 0;
+            } else {
+                if (nz < 0 || nz >= con[2]) continue;
+            }
+            // ---------------------
+
+	    if((grid[nx][ny][nz][0]!=LIQORI && grid[nx][ny][nz][1]!=POWORI) && (grid[nx][ny][nz][0]==gori && checker[nx][ny][nz]==0)){ // grains not yet measured, no liquid
+                checker[nx][ny][nz] = 1;
+                stack[++top] = (Pos){nx, ny, nz};
+                (*cnt)++;
+            }
+        }
     }
     return;
 }
 
-void DFS_array(int con[],int x,int y,int z,int gori,int**** const grid,int*** checker,int lim[],int* cnt,int pbc[]){
-// Does not consider diagonal direction connection since such a connect bridge may unstable considering GB curvature effect
-	checker[x][y][z]=1;
-	
-    if(z<con[2]-1){
-	if(gori==grid[x][y][z+1][0]&&checker[x][y][z+1]==0){
-		if(lim[5]<z)
-			lim[5]=z;
-		DFS_array(con,x,y,z+1,gori,grid,checker,lim,cnt,pbc);
-	}
+void DFS_array(int con[],int start_x, int start_y, int start_z, int gori, int**** const grid, int*** checker,int lim[],int* cnt, Pos* stack,int pbc[]) {
+    long top = -1; // 스택의 현재 위치 (맨 위)
+
+    // 1. 시작점 넣기 (Push)
+    stack[++top] = (Pos){start_x, start_y, start_z};
+    checker[start_x][start_y][start_z] = 1; // 방문 표시
+    *cnt = 1;
+
+    lim[0] = start_x; lim[1] = start_x; // x min, max
+    lim[2] = start_y; lim[3] = start_y; // y min, max
+    lim[4] = start_z; lim[5] = start_z; // z min, max
+
+    while (top >= 0) {
+        Pos curr = stack[top--];
+
+	// --- Min/Max 업데이트 구간 ---
+        if (curr.x < lim[0]) lim[0] = curr.x;
+        if (curr.x > lim[1]) lim[1] = curr.x;
+        if (curr.y < lim[2]) lim[2] = curr.y;
+        if (curr.y > lim[3]) lim[3] = curr.y;
+        if (curr.z < lim[4]) lim[4] = curr.z;
+        if (curr.z > lim[5]) lim[5] = curr.z;
+        // ----------------------------
+
+        int dx[] = {1, -1, 0, 0, 0, 0};
+        int dy[] = {0, 0, 1, -1, 0, 0};
+        int dz[] = {0, 0, 0, 0, 1, -1};
+
+        for (int i = 0; i < 6; i++) {
+            int nx = curr.x + dx[i];
+            int ny = curr.y + dy[i];
+            int nz = curr.z + dz[i];
+
+            // --- PBC 처리 구간 ---
+            // x방향 PBC가 켜져있다면 (pbc[0] == 1)
+            if (pbc[0]) {
+                if (nx < 0) nx = con[0] - 1;
+                else if (nx >= con[0]) nx = 0;
+            } else {
+                if (nx < 0 || nx >= con[0]) continue; // PBC 꺼져있으면 무시
+            }
+
+            // y방향 PBC (pbc[1] == 1)
+            if (pbc[1]) {
+                if (ny < 0) ny = con[1] - 1;
+                else if (ny >= con[1]) ny = 0;
+            } else {
+                if (ny < 0 || ny >= con[1]) continue;
+            }
+
+            // z방향 PBC (pbc[2] == 1)
+            if (pbc[2]) {
+                if (nz < 0) nz = con[2] - 1;
+                else if (nz >= con[2]) nz = 0;
+            } else {
+                if (nz < 0 || nz >= con[2]) continue;
+            }
+            // ---------------------
+
+	    if((grid[nx][ny][nz][0]!=LIQORI && grid[nx][ny][nz][1]!=POWORI) && (grid[nx][ny][nz][0]==gori && checker[nx][ny][nz]==0)){ // grains not yet measured, no liquid
+                checker[nx][ny][nz] = 1;
+                stack[++top] = (Pos){nx, ny, nz};
+                (*cnt)++;
+            }
+        }
     }
-    if(y<con[1]-1){
-	if(gori==grid[x][y+1][z][0]&&checker[x][y+1][z]==0){
-		if(lim[3]<y)
-			lim[3]=y;
-		DFS_array(con,x,y+1,z,gori,grid,checker,lim,cnt,pbc);
-	}
-    }
-    if(x<con[0]-1){
-	if(gori==grid[x+1][y][z][0]&&checker[x+1][y][z]==0){
-		if(lim[1]<x)
-			lim[1]=x;
-		DFS_array(con,x+1,y,z,gori,grid,checker,lim,cnt,pbc);
-	}
-    }
-    if(z>0){
-	if(gori==grid[x][y][z-1][0]&&checker[x][y][z-1]==0){
-		if(lim[4]>y)
-			lim[4]=y;
-		DFS_array(con,x,y,z-1,gori,grid,checker,lim,cnt,pbc);
-	}
-    }
-    if(y>0){
-	if(gori==grid[x][y-1][z][0]&&checker[x][y-1][z]==0){
-		if(lim[2]>y)
-			lim[2]=y;
-		DFS_array(con,x,y-1,z,gori,grid,checker,lim,cnt,pbc);
-	}
-    }
-    if(x>0){
-	if(gori==grid[x-1][y][z][0]&&checker[x-1][y][z]==0){
-		if(lim[0]>x)
-			lim[0]=x;
-		DFS_array(con,x-1,y,z,gori,grid,checker,lim,cnt,pbc);
-	}
-    }
-	*cnt=*cnt+1;
     return;
 }
 
@@ -1862,10 +1808,6 @@ void pdas(int**** tgrid,char fnam[],int dir[]){
 			return;
 			break;
 	}
-
-//	printf("From where? (%c 0 ~ %d, unit voxel)\n >> ",c,max);
-//	scanf("%d",&start);
-
 	for(i=0;i<max;i++)
 		printf("%d    %d\n",i,(int)grainsize(tgrid,dir,info,i,cor));
 
@@ -1984,7 +1926,8 @@ void find_range(int**** grid,double*** tgrid,int dir[],int pbc[],double temp[]){
 		    if(grid[i][j][k][0]==LIQORI){ //LIQUID
 			if(temp[0]>tgrid[i][j][k])
 			    temp[0]=tgrid[i][j][k]; //Lowest T among liquid
-		    }else if(grid[i][j][k][0]!=PTCLORI){ // SOLID
+//		    }else if(grid[i][j][k][0]!=PTCLORI){ // SOLID
+		    }else if(grid[i][j][k][1]!=POWORI){ // SOLID
 			if(temp[1]<tgrid[i][j][k])
 			    temp[1]=tgrid[i][j][k]; // Highest T among solid
 		    }
@@ -1998,14 +1941,14 @@ void find_range(int**** grid,double*** tgrid,int dir[],int pbc[],double temp[]){
 double Tcalc_MCS(char func[],int mcs){ // calculate T from t(MCS)
 	char temp[50];
 	sprintf(temp,"%s",func);
-	time_ins(temp,(double)mcs);
+	var_ins(temp,(double)mcs,"t");
 	return eval(temp);
 }
 
 double Tcalc_sec(char func[],double time){ // calculate T from t(sec)
 	char temp[50];
 	sprintf(temp,"%s",func);
-	time_ins(temp,time);
+	var_ins(temp,time,"t");
 	return eval(temp);
 }
 

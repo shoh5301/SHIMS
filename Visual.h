@@ -31,7 +31,6 @@ void tgnu_plot(double*** temp,char fnam[],int dir[],int melt,double haz[]); // D
 int max_size(int a,int b);//{ // Return bigger value
 int angle(int a,int b,int c); // Return colour for specific angle
 void text_plot(int**** tgrid,char fnam[],int dir[]); // Draw texture pole figure
-double avgtcalc(double*** temp,char fnam[],int dir[],int mode);
 void convert_tdat(double*** grid,int dir[]);
 void convert_dat(int**** grid,int dir[]);
 

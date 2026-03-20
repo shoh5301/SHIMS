@@ -40,9 +40,18 @@ void GGmodule_MPI(int**** grid,double jc[],int dir[],int out[],char ttem0[],doub
 	MPI_Bcast(rtim,5,MPI_DOUBLE,0,MPI_COMM_WORLD);
 	MPI_Bcast(tcheck,2,MPI_CHAR,0,MPI_COMM_WORLD);
 
-	mpixlen[0]=(int)((double)dir[0]/(double)n_size);
+	mpixlen[0]=(int)((double)dir[0]/(double)n_size)-1;
 	while(n_size*mpixlen[0]<dir[0])
 		mpixlen[0]++;
+
+	if((dir[0]-(n_size-1)*mpixlen[0])<0)
+		mpixlen[0]--;
+	if(mpixlen[0]<2){
+	    printf("### ERROR: Too narrow xlength for each processor (too many procs for this job... ###\n");
+	    printf("           Recude the number of MPI procs so that 3*NPROCS <= Voxels in X axis ...\n");
+	    printf("    JOB ABORTED...\n");
+	    return;
+	}
 
 	mpix0[0]=mpixlen[0]*(n_size-n_rank-1);
 	// when size 4:
@@ -59,7 +68,6 @@ void GGmodule_MPI(int**** grid,double jc[],int dir[],int out[],char ttem0[],doub
 	mpidir[0]=mpixlen[2]+2;
 	mpidir[1]=dir[1];
 	mpidir[2]=dir[2];
-
 	mpigrid=MPI_distr(grid,mpigrid,mpix0[0],mpixlen,dir,pbc[0]);
 
     if(n_rank==0){
@@ -238,32 +246,23 @@ void GGmodule_MPI(int**** grid,double jc[],int dir[],int out[],char ttem0[],doub
     return;
 }
 
-void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc[],double rscale[],double tbc[][2]){
+void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc[],double rscale[],double tbc[][2],char dfeq[]){
 	clock_t start,end,ttime;
 	char temp[100],Tfun[50]; //Tfun: postfix equation for T-t rel.
 	int i,j,k,l,m,n,o,situ;
 	int mcs=0,total=0,step=0,dmc[3]={1},fdm_loop=0,mpidir[3];
 	int mode[4]={1,1,0,0};
-	// [0] == lat_mode,[1] == fit_mode,[2] == T_mode, [3] == P_mode;
-	// P_mode > 0 -> homogeneous phases, so accelerate FDM // P_mode < 0 -> fixed (isothermal)
-	double k_per_cp,Tmax[3],Tinfo[2]={0},dtsave[2]; //dtsave 0 = dtfdm, 1 = prevdt
-	// Tmax 0 == Tliq, 1 == T_init for solidification, 2 == freezing range
-	// Tinfo 0 = minimum among liquid, 1 = maximum among solid, Pmax 0 for GG, 1 for solidification
-	double Vsite,Asite,fnucl,factor[2]; // factor 0 = g.g. 1 = solid nucl. & growth
-	double pcps[3]; // 0 == pcmax, 1 == psmax, 2 == 1/(pcmax+psmax)
-	double rtim[5]={0},dEif,prob,dGfor,dGfus,dtdMCS[2]={0}; //dtdMCS 0 = g.g. 1 = solid nucl. & growth
+	double k_per_cp,Tmax[3],Tinfo[2]={0},dtsave[2];
+	double Vsite,Asite,fnucl,factor[2];
+	double pcps[3];
+	double rtim[5]={0},dtdMCS[2]={0}; 
 	double Tnow,dHfus[2],fhetero_s,Nsite[2];
-	// dHfus 0 == dHfus_m3, dHfus 1 == dH_per_Cp
-	//Nsite[2]; //Nsite 0 == volumic density * voxel volume, 1 == plane density *voxel area
-	double ****fdmt=NULL; // 0 is T for now, 1 is T for next, 2 is for latent heat info.
+	double ****fdmt=NULL;
 	FILE* ftemp=NULL;
-//  rtim 0 = total time // 1 = dt_MCS in simul // 2 = solid fraction measurement (1 to yes) // 3 = Lamda (mm / sites) // 4 = time range for T
 
         int**** mpigrid=NULL;
 	double**** mpitgrid=NULL;
-        int mpixlen[3],mpix0[3],mpimode=0,mpixnum,stepdiv[2];//count=0;
-// mpixlen 0 = avg. length 1 = half avg. length 2 = actual length for each process
-// mpix0 0 = original start point for each process 1 = 1st step start point 2 = 2nd step start point
+        int mpixlen[3],mpix0[3],mpimode=0,mpixnum,stepdiv[2];
 
 	if(out[5]>1)
 	    rtim[2]=1;
@@ -286,17 +285,11 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 //		     dHfus (J/mol) / Cp (J/K mol) = K
 	k_per_cp=melt[3]/melt[4]*rscale[9]; // (W / m K ) / (J/ m3 K) = W m2 / J
 //	alpha=dt*melt[3]/(cp_m3*rscale[1]*rscale[1]);
-	// Latent heat retroactive application scheme
-/*	// first, thermal diffusivity alpha = k / (Cp / Vm) = k Vm / Cp
-	melt[6]=melt[3]*rscale[9]/melt[4];
-	// next, time for thermal diffusion to voxel size
-	melt[6]=rscale[1]*rscale[1]/melt[6];
-	// finally, 
-	melt[6]=dHfus_per_Cp*(melt[1]/melt[6]);*/
+
 	dtsave[0]=melt[1]; // original dt for FDM
-	melt[6]=dHfus[1]*melt[1]/(rscale[1]*rscale[1])*melt[3]*rscale[9]/melt[4];
-	if(melt[6]>dHfus[1])
-	    melt[6]=dHfus[1];
+
+	// Latent heat retroactive application scheme
+	melt[6]=LatHeatPerStep(dHfus[1],melt[1],rscale[1],melt[3],rscale[9],melt[4]);
 
 	//      k    *dt / Cp    * dx^2
 	Tmax[0]=rscale[2]; //Tl
@@ -305,8 +298,10 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 
 	// for solidification
 	pcps[0]=Asite*(26*(jc[1]-jc[4])); // heterog. nucleation surrounded by other grains: maximum pc value for "a solid nucleus"
-	pcps[1]=Vsite*dHfus[0]*(1-KAUZMANN); // 1-Tk/Tm where Tk is Kauzmann Temperature for glass transition
-//	pcps[1]=Vsite*dHfus[0];
+	if(dfeq[0]=='d')
+		pcps[1]=Vsite*dHfus[0]*(1-KAUZMANN); // 1-Tk/Tm where Tk is Kauzmann Temperature for glass transition
+	else
+		pcps[1]=Vsite*Xl_df(dfeq,KAUZMANN*melt[8],dHfus[0],Tmax,melt[8]); //dHfus[0]*(1-KAUZMANN); // 1-Tk/Tm where Tk is Kauzmann Temperature for glass transition
 	pcps[2]=1/(pcps[0]+pcps[1]);
 
 	if(out[3]<=0){ // Time criteria is MCS
@@ -329,10 +324,17 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
         mpixlen[0]=(int)((double)dir[0]/(double)n_size);
         while(n_size*mpixlen[0]<dir[0])
                 mpixlen[0]++;
+
+	if((dir[0]-(n_size-1)*mpixlen[0])<0)
+		mpixlen[0]--;
+	if(mpixlen[0]<2){
+	    printf("### ERROR: Too narrow xlength for each processor (too many procs for this job... ###\n");
+	    printf("           Recude the number of MPI procs so that 3*NPROCS <= Voxels in X axis ...\n");
+	    printf("    JOB ABORTED...\n");
+	    return;
+	}
+
         mpix0[0]=mpixlen[0]*(n_size-n_rank-1);
-        // when size 4:
-        // rank 3 -> mpix0 = 0, rank 2 -> xlen, 1 -> xlen*2, 0 -> xlen*3 < dir[0] (<= xlen*4)
-        // mpixlen 0 = original avg. length 1 = half value 2 = actual length in each process
         if(n_rank!=0)
             mpixlen[2]=mpixlen[0];
         else // n_rank ==0
@@ -426,10 +428,9 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 		// in FDM loop, automatically ++
 	    }else
 		fdm_loop=(int)(rtim[1]/melt[1]);
-	    melt[6]=dHfus[1]*melt[1]/(rscale[1]*rscale[1])*melt[3]*rscale[9]/melt[4];
-	    if(melt[6]>dHfus[1])
-		melt[6]=dHfus[1];
-	    dtsave[2]=rtim[1];
+
+	    melt[6]=LatHeatPerStep(dHfus[1],melt[1],rscale[1],melt[3],rscale[9],melt[4]);
+	    dtsave[1]=rtim[1];
 	}else{
 //	    if(rtim[1]>rscale[12]){
 	    factor[0]=factor[0]*rscale[12]/rtim[1];
@@ -458,9 +459,7 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 	    if(rtim[1]<melt[1]){ // fdm time > MC time
 		printf("(this will be adjusted because MCS < t_FDM)\n");
 		melt[1]=rtim[1];
-		melt[6]=dHfus[1]*melt[1]/(rscale[1]*rscale[1])*melt[3]*rscale[9]/melt[4];
-		if(melt[6]>dHfus[1])
-		    melt[6]=dHfus[1];
+		melt[6]=LatHeatPerStep(dHfus[1],melt[1],rscale[1],melt[3],rscale[9],melt[4]);
 
 		fdm_loop=0;
 		// in FDM loop, automatically ++
@@ -504,8 +503,7 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 /////////////////////////////// MC trial & FDM /////////////////////////////////////////////////
 	while(1){
 	    mcs++;
-//if(n_rank==0)
-//printf("mcs %d rtim %E\n",mcs,rtim[1]);
+//if(n_rank==0);printf("mcs %d rtim %E\n",mcs,rtim[1]);
 
 	    if(mpimode==0){ // former half first, later half second
 		mpix0[1]=1;
@@ -522,7 +520,7 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 		i=(int)(rand()/(RAND_MAX/mpixnum+1))+mpix0[1];
 		j=(int)(rand()/(RAND_MAX/dir[1]+1));
 		k=(int)(rand()/(RAND_MAX/dir[2]+1));
-		MCtrial_SOL(i,j,k,mpigrid,mpitgrid,mpidir,pbc,mode,melt,Tmax,dHfus,jc,tbc,Vsite,Asite,factor,Nsite,pcps,rscale[3]);
+		MCtrial_SOL(i,j,k,mpigrid,mpitgrid,mpidir,pbc,mode,melt,Tmax,dHfus,jc,tbc,Vsite,Asite,factor,Nsite,pcps,rscale[3],dfeq);
 		step--;     // 1 Attempt
 	    }// 0.5 MCS
 	    MPI_BCsync(mpigrid,mpixlen[2],dir,pbc[0],mpimode-1);
@@ -538,7 +536,7 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 		j=(int)(rand()/(RAND_MAX/dir[1]+1));
 		k=(int)(rand()/(RAND_MAX/dir[2]+1));
 
-		MCtrial_SOL(i,j,k,mpigrid,mpitgrid,mpidir,pbc,mode,melt,Tmax,dHfus,jc,tbc,Vsite,Asite,factor,Nsite,pcps,rscale[3]);
+		MCtrial_SOL(i,j,k,mpigrid,mpitgrid,mpidir,pbc,mode,melt,Tmax,dHfus,jc,tbc,Vsite,Asite,factor,Nsite,pcps,rscale[3],dfeq);
 		step--;     // 1 Attempt
 	    }// 0.5 MCS
 ///  나머지 boundary condition 동기화 ////////////////////////////////
@@ -549,13 +547,11 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
             MPI_Bcast(&mpimode,1,MPI_INT,0,MPI_COMM_WORLD);
 // 1 MCS DONE
 
-// mpixlen 0 = avg. length 1 = half avg. length 2 = actual length for each process
-// mpix0 0 = original start point for each process 1 = 1st step start point 2 = 2nd step start point
-//mpix0[0] <= i < mpix0[0]+mpixlen[2]
-
 	    if(mode[MTEM]==0 && mode[MPRO]>=0)
-		heat_transfer_MPI(mpitgrid,tbc,mpidir,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mpixlen[2]);
-	    
+		heat_transfer_MPI(mpigrid,mpitgrid,tbc,mpidir,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mpixlen[2]);
+	
+//if(n_rank==0);puts("FDM DONE");
+
 	    rtim[0]+=rtim[1];
 
 	    if(out[3]<=0){ // Time criteria is MCS
@@ -570,11 +566,8 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 			MPI_Tsync(fdmt[2],mpitgrid[2],mpix0[0],mpixlen,dir);
 // Active dt determination is not valid in MPI mode
 //		if(n_rank==0)
-//		    rtim[1]=active_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt);
 			if(n_rank==0)
 			    rtim[1]=fixed_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt); // */
-//			rtim[1]=fixed_dt_set(mcs,&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,mpigrid,mpitgrid,mpidir,pbc,rscale,melt);
-//			situ=find_min_rank(rtim[1]);
 			
 			situ=0;
 			MPI_Bcast(&(mode[MPRO]),1,MPI_DOUBLE,situ,MPI_COMM_WORLD);
@@ -593,12 +586,18 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 		    }
 		}
 		if(dmc[0]==0){ // Data out
+//if(n_rank==0)
+//puts("DATOUT START");
 		    dmc[0]=out[4];
 		    MPI_gather(grid,mpigrid,mpix0[0],mpixlen,dir);
+//if(n_rank==0)
+//puts("GATHERING DONE");
 		    if(n_rank==0){
 			printf(" %dth MC Step was taken...\n",mcs);
 			datout(dir,grid,mcs,out,rtim,rscale[0]); // Write data file
+//puts("DATOUT DONE");
 		    }
+MPI_Barrier(MPI_COMM_WORLD);
 		}
 		if(dmc[1]==0){ // Create graphics file
 		    dmc[1]=out[1];
@@ -703,32 +702,21 @@ void SOLmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],in
 	return;
 }
 
-void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc[],double rscale[],double tbc[][2],double am[]){
+void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int pbc[],double rscale[],double tbc[][2],double am[],char dfeq[]){
 	clock_t start,end,ttime;
 	char temp[100],Tfun[50]; //Tfun: postfix equation for T-t rel.
 	int i,j,k,l,m,n,o,situ;
 	int mcs=0,total=0,step=0,dmc[3]={1},fdm_loop=0,mpidir[3];
 	int mode[4]={1,1,0,0};
-	// [0] == lat_mode,[1] == fit_mode,[2] == T_mode, [3] == P_mode;
-	// P_mode > 0 -> homogeneous phases, so accelerate FDM // P_mode < 0 -> fixed (isothermal)
-	double k_per_cp,Tmax[3],Tinfo[2]={0},dtsave[2],mp[7]; //dtsave 0 = dtfdm, 1 = prevdt
-	// Tmax 0 == Tmelt, 1 == T_init for solidification, 2 == Tmax for melting, 
-	// Tinfo 0 = minimum among liquid, 1 = maximum among solid, Pmax 0 for GG, 1 for solidification
-	double Vsite,Asite,fnucl,factor[2],pcps[3]; // factor 0 = g.g. 1 = solid nucl. & growth
-	// 0 == pcmax, 1 == psmax, 2 == 1/(pcmax+psmax)
-	double rtim[5]={0},dEif,prob,dGfor,dGfus,dtdMCS[2]={0}; //dtdMCS 0 = g.g. 1 = solid nucl. & growth
+	double k_per_cp,Tmax[3],Tinfo[2]={0},dtsave[2],mp[7];
+	double Vsite,Asite,fnucl,factor[2],pcps[3]; 
+	double rtim[5]={0},dtdMCS[2]={0}; 
 	double Tnow,dHfus[2],fhetero_s,Nsite[2],pos[2];
-	// dHfus 0 == dHfus_m3, dHfus 1 == dH_per_Cp
-	//Nsite[2]; //Nsite 0 == volumic density * voxel volume, 1 == plane density *voxel area
-	double ****fdmt=NULL; // 0 is T for now, 1 is T for next, 2 is for latent heat info.
+	double ****fdmt=NULL; 
 	FILE* ftemp=NULL;
-//  rtim 0 = total time // 1 = dt_MCS in simul // 2 = solid fraction measurement (1 to yes) // 3 = Lamda (mm / sites) // 4 = time range for T
-
         int**** mpigrid=NULL;
 	double**** mpitgrid=NULL;
-        int mpixlen[3],mpix0[3],mpimode=0,mpixnum,stepdiv[2];//count=0;
-// mpixlen 0 = avg. length 1 = half avg. length 2 = actual length for each process
-// mpix0 0 = original start point for each process 1 = 1st step start point 2 = 2nd step start point
+        int mpixlen[3],mpix0[3],mpimode=0,mpixnum,stepdiv[2];
 
 	if(out[5]>1)
 	    rtim[2]=1;
@@ -759,9 +747,7 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 	// finally, 
 	melt[6]=dHfus_per_Cp*(melt[1]/melt[6]);*/
 	dtsave[0]=melt[1]; // original dt for FDM
-	melt[6]=dHfus[1]*melt[1]/(rscale[1]*rscale[1])*melt[3]*rscale[9]/melt[4];
-	if(melt[6]>dHfus[1])
-		melt[6]=dHfus[1];
+	melt[6]=LatHeatPerStep(dHfus[1],melt[1],rscale[1],melt[3],rscale[9],melt[4]);
 
 	//      k    *dt / Cp    * dx^2
 	Tmax[0]=rscale[2];
@@ -770,7 +756,11 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 
 	// for solidification
 	pcps[0]=Asite*(26*(jc[1]-jc[4])); // heterog. nucleation surrounded by other grains: maximum pc value for "a solid nucleus"
-	pcps[1]=Vsite*dHfus[0]*(1-KAUZMANN); // 1-Tk/Tm where Tk is Kauzmann Temperature for glass transition
+	if(dfeq[0]=='d')
+		pcps[1]=Vsite*dHfus[0]*(1-KAUZMANN); // 1-Tk/Tm where Tk is Kauzmann Temperature for glass transition
+	else
+		pcps[1]=Vsite*Xl_df(dfeq,KAUZMANN*melt[8],dHfus[0],Tmax,melt[8]);
+	//dHfus[0]*(1-KAUZMANN); // 1-Tk/Tm where Tk is Kauzmann Temperature for glass transition
 	pcps[2]=1/(pcps[0]+pcps[1]);
 
 	if(out[3]<=0){ // Time criteria is MCS
@@ -793,6 +783,16 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
         mpixlen[0]=(int)((double)dir[0]/(double)n_size);
         while(n_size*mpixlen[0]<dir[0])
                 mpixlen[0]++;
+
+	if((dir[0]-(n_size-1)*mpixlen[0])<0)
+		mpixlen[0]--;
+	if(mpixlen[0]<2){
+	    printf("### ERROR: Too narrow xlength for each processor (too many procs for this job... ###\n");
+	    printf("           Recude the number of MPI procs so that 3*NPROCS <= Voxels in X axis ...\n");
+	    printf("    JOB ABORTED...\n");
+	    return;
+	}
+
         mpix0[0]=mpixlen[0]*(n_size-n_rank-1);
         // when size 4:
         // rank 3 -> mpix0 = 0, rank 2 -> xlen, 1 -> xlen*2, 0 -> xlen*3 < dir[0] (<= xlen*4)
@@ -868,7 +868,6 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 //		   dx * (K_MC / K_e)
 // Dynamic MCS setting
 	out[5]=3-out[5];
-// Now, out[5] 0 -> = t_max, 1 -> t_small, 2 -> t_gg
 
 	if(n_rank==0)
 	    printf(" ### NOTE: EVEN IN THE ACCELERATION MODE, FIRST 1 MCS IS IN MINIMUM MODE... ###\n\n");
@@ -886,8 +885,8 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 		// in FDM loop, automatically ++
 	    }else
 		fdm_loop=(int)(rtim[1]/melt[1]);
-	    melt[6]=dHfus[1]*melt[1]/(rscale[1]*rscale[1])*melt[3]*rscale[9]/melt[4];
-	    dtsave[2]=rtim[1];
+	    melt[6]=LatHeatPerStep(dHfus[1],melt[1],rscale[1],melt[3],rscale[9],melt[4]);
+	    dtsave[1]=rtim[1];
 	}else{
 //	    if(rtim[1]>rscale[12]){
 	    factor[0]=factor[0]*rscale[12]/rtim[1];
@@ -916,7 +915,7 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 	    if(rtim[1]<melt[1]){ // fdm time > MC time
 		printf("(this will be adjusted because MCS < t_FDM)\n");
 		melt[1]=rtim[1];
-		melt[6]=dHfus[1]*melt[1]/(rscale[1]*rscale[1])*melt[3]*rscale[9]/melt[4];
+		melt[6]=LatHeatPerStep(dHfus[1],melt[1],rscale[1],melt[3],rscale[9],melt[4]);
 
 		fdm_loop=0;
 		// in FDM loop, automatically ++
@@ -939,33 +938,12 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 	printf("    %d processes: MPI activated\n\n",n_size);
 
     }
-
-// Melt pool info.
-// am 0 = Melt pool mode (-1 = Circle, 0 = TEARDROP,  1 = Gaussian) 
-// 1 = Melt pool direction (negative -> X, positive -> Y)
-// Start position (x = 6, y = 7), 8 = scan speed
-// when am[0]==-1: 2 = Radius, 9 = Boundary Temperature
-// when am[0]==0:  2 = Width  3 = Cap+Tail length  4 = Depth  5 = Geometry (Teardrop shape), 9 = Boundary Temperature
-// when am[0]==1:  2 = SX     3 = SY               4 = SZ    5 = POW  9 = ABS    (Gaussian)
 	if(am[0]==0){
 	    mp[0]=4*atan(sqrt(2-sqrt(3))); // temporarily, mp[0] = theta
 	    mp[1]=am[3]/2;
 	    mp[2]=am[2]/(2*sin(mp[0])*pow(sin(mp[0]*0.5),am[5]));
 	    mp[3]=am[4]/(sin(mp[0])*pow(sin(mp[0]*0.5),am[5]));
 	}else if(am[0]>0){ // GAUSSIAN
-// mp 0 -> distance for jumping
-//    5 -> aP/(2 pi)^1.5/(sx sy sz)
-//    2 -> 1/sx^2    3 -> 1/sy^2   4 -> 1/sz^2 // all in voxel^2 unit
-//    1 -> ap/(2 pi)^1.5/(sx sy sz) converted to K / s
-    
-//    GAUSS3D = (2 pi)^-1.5
-//	    mp[1]=am[9]*am[5]*GAUSS3D/(am[2]*am[3]*am[4]); // W / m3 = J / m3 s
-//	    mp[1]=mp[1]*rscale[9]*rtim[1]/melt[4]; // J / m3 s * m3 / mol * s / J/K mol = K
-/*	    mp[5]=am[9]*am[5]*GAUSS3D/(am[2]*am[3]*am[4])*rscale[9]/melt[4];
-	    mp[1]=mp[5]*rtim[1];*/
-//    GAUSS2D = (2 pi) ^ -1
-//	    mp[1]=am[9]*am[5]*GAUSS2D/(am[2]*am[3]); // W / m2 = J / m2 s
-//	    mp[1]=mp[1]*pow(rscale[9],2/3)*rtim[1]/melt[4]; // J / m2 s * m2 / mol * s / J/K mol = K
 	    mp[5]=am[9]*am[5]*GAUSS2D/(am[2]*am[3])*pow(rscale[9],2/3)/melt[4];
 	    mp[1]=mp[5]*rtim[1];
 // sx, sy, sz unit m -> sx, sy, sz unit voxel
@@ -1042,7 +1020,7 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 //		Particle_Form(mpigrid,mpidir,pbc,jc[7]);
 
 	    if(mode[MPRO]>=0){
-		heat_transfer_MPI(mpitgrid,tbc,mpidir,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mpixlen[2]);
+		heat_transfer_MPI(mpigrid,mpitgrid,tbc,mpidir,dir,pbc,rscale[1],melt,fdm_loop,k_per_cp,Tmax[0],mpixlen[2]);
 		if(am[9]>=Tmax[0])
 		    check_melting(mpigrid,mpitgrid,Tmax[0],mpidir);
 	    }
@@ -1062,7 +1040,7 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 		i=(int)(rand()/(RAND_MAX/mpixnum+1))+mpix0[1];
 		j=(int)(rand()/(RAND_MAX/dir[1]+1));
 		k=(int)(rand()/(RAND_MAX/dir[2]+1));
-		MCtrial_SOL(i,j,k,mpigrid,mpitgrid,mpidir,pbc,mode,melt,Tmax,dHfus,jc,tbc,Vsite,Asite,factor,Nsite,pcps,rscale[3]);
+		MCtrial_SOL(i,j,k,mpigrid,mpitgrid,mpidir,pbc,mode,melt,Tmax,dHfus,jc,tbc,Vsite,Asite,factor,Nsite,pcps,rscale[3],dfeq);
 		step--;     // 1 Attempt
 	    }// 0.5 MCS
 	    MPI_BCsync(mpigrid,mpixlen[2],dir,pbc[0],mpimode-1);
@@ -1078,7 +1056,7 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 		j=(int)(rand()/(RAND_MAX/dir[1]+1));
 		k=(int)(rand()/(RAND_MAX/dir[2]+1));
 
-		MCtrial_SOL(i,j,k,mpigrid,mpitgrid,mpidir,pbc,mode,melt,Tmax,dHfus,jc,tbc,Vsite,Asite,factor,Nsite,pcps,rscale[3]);
+		MCtrial_SOL(i,j,k,mpigrid,mpitgrid,mpidir,pbc,mode,melt,Tmax,dHfus,jc,tbc,Vsite,Asite,factor,Nsite,pcps,rscale[3],dfeq);
 		step--;     // 1 Attempt
 	    }// 0.5 MCS
 ///  나머지 boundary condition 동기화 ////////////////////////////////
@@ -1087,12 +1065,6 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 	    if(n_rank==0) // for next mpimode
 		mpimode=(int)(rand()/(RAND_MAX/2+1));
             MPI_Bcast(&mpimode,1,MPI_INT,0,MPI_COMM_WORLD);
-// 1 MCS DONE
-//printf("[rank %d] MCS DONE\n",n_rank);
-// mpixlen 0 = avg. length 1 = half avg. length 2 = actual length for each process
-// mpix0 0 = original start point for each process 1 = 1st step start point 2 = 2nd step start point
-//mpix0[0] <= i < mpix0[0]+mpixlen[2]
-
 	    rtim[0]+=rtim[1];
 
 	    if(out[3]<=0){ // Time criteria is MCS
@@ -1109,8 +1081,6 @@ void AMmodule_MPI(int**** grid,double jc[],int dir[],int out[],double melt[],int
 // Active dt determination is not valid in MPI mode
 			    if(n_rank==0)
 				rtim[1]=fixed_dt_set(mcs,&(mode[MPRO]),&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,grid,fdmt,dir,pbc,rscale,melt); // */
-//			rtim[1]=fixed_dt_set(mcs,&fdm_loop,dtsave,dtdMCS,dHfus,Tinfo,factor,Vsite,Asite,out,Tmax,pcps,mpigrid,mpitgrid,mpidir,pbc,rscale,melt);
-//			situ=find_min_rank(rtim[1]);
 			    situ=0;
 			    MPI_Bcast(&(mode[MPRO]),1,MPI_DOUBLE,situ,MPI_COMM_WORLD);
 			    MPI_Bcast(&(rtim[1]),1,MPI_DOUBLE,situ,MPI_COMM_WORLD);
@@ -1412,10 +1382,6 @@ double**** MPI_Tdistr(double**** grid,double**** mpigrid,int mpix0,int mpixlen[]
 
 void MPI_TBCsync(double*** mpigrid,int mpixlen,int dir[],int xpbc){
 	int i,j,o;
-	// 참고: 
-	// rank N	| rank N-1		| ... | rank 0 
-	// 0 ~ mpixlen-1, mpixlen ~ 2*mpixlen-1, ..., (~~~) ~ dir[0]-1
-//	0=0
 	i=1; // min x
 	j=mpixlen; // max x
 	o=mpixlen+1; // max x +1
@@ -1468,7 +1434,7 @@ void MPI_Tsync(double*** fdmt,double*** mpigrid,int mpix0,int mpixlen[],int dir[
 	return;
 }
 
-void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],int pbc[],double mcdx,double const melt[],int fdm_loop,double k_per_cp,double Tmelt,int mpixlen){
+void heat_transfer_MPI(int ****grid,double**** tgrid,double tbc[][2],int mpidir[],int dir[],int pbc[],double mcdx,double const melt[],int fdm_loop,double k_per_cp,double Tmelt,int mpixlen){
 	int i,j,k,l,temp[3],fdmax[3];//imax,jmax,kmax;
 	double hconv,revdx2;
 	
@@ -1480,9 +1446,7 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 	fdmax[0]=mpidir[0]-2; // 0, mpidir-1 voxels are only for BC sync
 	fdmax[1]=mpidir[1]-1;
 	fdmax[2]=mpidir[2]-1;
-
 	revdx2=1/(mcdx*mcdx);
-
 // Latent heat divided by loop number : retroactive accumulation of latent heat for 1 MCS
 // Latent heat multiplied with phase transf. fraction : when dx_fdm != dx_mc, delta_fs != 1: delta_fs == V_mc / V_fdm
 // FDM loop
@@ -1499,11 +1463,12 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 //	0. inner part
 		for(i=fdmax[0]-1;i>1;i--){
 		    for(j=fdmax[1]-1;j>0;j--){
-			for(k=fdmax[2]-1;k>0;k--)
-			    tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*\
-					     (revdx2*(tgrid[0][i+1][j][k]+tgrid[0][i-1][j][k]-2*tgrid[0][i][j][k])+\
-					      revdx2*(tgrid[0][i][j+1][k]+tgrid[0][i][j-1][k]-2*tgrid[0][i][j][k])+\
-					      revdx2*(tgrid[0][i][j][k+1]+tgrid[0][i][j][k-1]-2*tgrid[0][i][j][k]));
+			for(k=fdmax[2]-1;k>0;k--){
+				  tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*\
+						   (revdx2*(tgrid[0][i+1][j][k]+tgrid[0][i-1][j][k]-2*tgrid[0][i][j][k])+\
+						    revdx2*(tgrid[0][i][j+1][k]+tgrid[0][i][j-1][k]-2*tgrid[0][i][j][k])+\
+						    revdx2*(tgrid[0][i][j][k+1]+tgrid[0][i][j][k-1]-2*tgrid[0][i][j][k]));
+			}
 		    }
 		}
 
@@ -1512,16 +1477,16 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 		for(i=fdmax[0]-1;i>1;i--){
 			j=fdmax[1];
 			for(k=fdmax[2]-1;k>0;k--){ // bot & top xy planes
-				tgrid[1][i][0][k]=tgrid[0][i][0][k]+melt[1]*k_per_cp*\
+				tgrid[1][i][0][k]=tgrid[0][i][0][k]+melt[1]*k_per_cp*powcon(melt[9],grid[i][0][k][1])*\
 					   revdx2*(tgrid[0][i+1][0][k]+tgrid[0][i-1][0][k]-2*tgrid[0][i][0][k]);
-				tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*\
+				tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*\
 					   revdx2*(tgrid[0][i+1][j][k]+tgrid[0][i-1][j][k]-2*tgrid[0][i][j][k]);
 			}
 			k=fdmax[2];
 			for(j=fdmax[1];j>=0;j--){ // bot & top xz planes, including edges
-				tgrid[1][i][j][0]=tgrid[0][i][j][0]+melt[1]*k_per_cp*\
+				tgrid[1][i][j][0]=tgrid[0][i][j][0]+melt[1]*k_per_cp*powcon(melt[9],grid[i][j][0][1])*\
 					   revdx2*(tgrid[0][i+1][j][0]+tgrid[0][i-1][j][0]-2*tgrid[0][i][j][0]);
-				tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*\
+				tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*\
 					   revdx2*(tgrid[0][i+1][j][k]+tgrid[0][i-1][j][k]-2*tgrid[0][i][j][k]);
 			}
 		}
@@ -1530,14 +1495,14 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 		if(n_rank==n_size-1){ // Lower X plane
 		    for(j=fdmax[1];j>=0;j--){ // upper: mpi BC
 			for(k=fdmax[2];k>=0;k--)
-			    tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*revdx2*\
+			    tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 					     (tgrid[0][i+1][j][k]+tgrid[0][i-1][j][k]-2*tgrid[0][i][j][k]);
 		    }
 
 		    if(pbc[0]!=0){// X pbc on
 			for(j=fdmax[1];j>=0;j--){
 			    for(k=fdmax[2];k>=0;k--)
-				tgrid[1][1][j][k]=tgrid[0][1][j][k]+melt[1]*k_per_cp*revdx2*\
+				tgrid[1][1][j][k]=tgrid[0][1][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[1][j][k][1])*revdx2*\
 						  (tgrid[0][0][j][k]+tgrid[0][2][j][k]-2*tgrid[0][1][j][k]);
 			}
 
@@ -1546,21 +1511,21 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 			if(tbc[0][0]==0){ // adiabatic
 			    for(j=fdmax[1];j>=0;j--){
 				for(k=fdmax[2];k>=0;k--)
-				  tgrid[1][1][j][k]=tgrid[0][1][j][k]+melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][1][j][k]=tgrid[0][1][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[1][j][k][1])*revdx2*\
 						    (tgrid[0][2][j][k]-tgrid[0][1][j][k]);
 			    }
 			}else if(tbc[0][0]<0){ // convection
 			    hconv=tbc[0][1]*k_per_cp*melt[1]/(mcdx*melt[3]); // h k dt / (cp dx k) = h dt / (cp dx)
 			    for(j=fdmax[1];j>=0;j--){
 				for(k=fdmax[2];k>=0;k--)
-				  tgrid[1][1][j][k]=tgrid[0][1][j][k]+melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][1][j][k]=tgrid[0][1][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[1][j][k][1])*revdx2*\
 						    (tgrid[0][2][j][k]-tgrid[0][1][j][k])-\
 						    hconv*(tbc[0][0]+tgrid[0][1][j][k]); // - (-Ta+Tnow)
 			    }
 			}else{ // tbc > 0 : heat sink
 			    for(j=fdmax[1];j>=0;j--){
 				for(k=fdmax[2];k>=0;k--)
-				  tgrid[1][1][j][k]=tgrid[0][1][j][k]+melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][1][j][k]=tgrid[0][1][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[1][j][k][1])*revdx2*\
 						    (tgrid[0][2][j][k]+tbc[0][0]-2*tgrid[0][1][j][k]);
 			    }
 			}
@@ -1568,34 +1533,34 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 		}else if(n_rank==0){ // upper X plane
 		    for(j=fdmax[1];j>=0;j--){ // lower: mpi BC
 			for(k=fdmax[2];k>=0;k--)
-			    tgrid[1][1][j][k]=tgrid[0][1][j][k]+melt[1]*k_per_cp*revdx2*\
+			    tgrid[1][1][j][k]=tgrid[0][1][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[1][j][k][1])*revdx2*\
 					     (tgrid[0][0][j][k]+tgrid[0][2][j][k]-2*tgrid[0][1][j][k]);
 		    }
 		    if(pbc[0]!=0){// X pbc on
 			for(j=fdmax[1];j>=0;j--){
 			    for(k=fdmax[2];k>=0;k--) // [0][j][k] = [fdmax[0]][j][k]
-				tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*revdx2*\
+				tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 						  (tgrid[0][i+1][j][k]+tgrid[0][i-1][j][k]-2*tgrid[0][i][j][k]);
 			}
 		    }else{//X pbc off
 			if(tbc[1][0]==0){ // adiabatic
 			    for(j=fdmax[1];j>=0;j--){
 				for(k=fdmax[2];k>=0;k--)
-				  tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 						    (tgrid[0][i-1][j][k]-tgrid[0][i][j][k]);
 			    }
 			}else if(tbc[1][0]<0){ // convection
 			    hconv=tbc[1][1]*k_per_cp*melt[1]/(mcdx*melt[3]); // h k dt / (cp dx k) = h dt / (cp dx)
 			    for(j=fdmax[1];j>=0;j--){
 				for(k=fdmax[2];k>=0;k--)
-				  tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 						    (tgrid[0][i-1][j][k]-tgrid[0][i][j][k])-\
 						    hconv*(tbc[1][0]+tgrid[0][i][j][k]); // - (-Ta+Tnow)
 			    }
 			}else{ // tbc > 0 : heat sink
 			    for(j=fdmax[1];j>=0;j--){
 				for(k=fdmax[2];k>=0;k--)
-				  tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 						    (tgrid[0][i-1][j][k]+tbc[1][0]-2*tgrid[0][i][j][k]);
 			    }
 			}
@@ -1603,9 +1568,9 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 		}else{ // inner MPI grids
 		    for(j=fdmax[1];j>=0;j--){
 			for(k=fdmax[2];k>=0;k--){
-			    tgrid[1][1][j][k]=tgrid[0][1][j][k]+melt[1]*k_per_cp*revdx2*\
+			    tgrid[1][1][j][k]=tgrid[0][1][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[1][j][k][1])*revdx2*\
 					     (tgrid[0][0][j][k]+tgrid[0][2][j][k]-2*tgrid[0][1][j][k]);
-			    tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*revdx2*\
+			    tgrid[1][i][j][k]=tgrid[0][i][j][k]+melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 					     (tgrid[0][i+1][j][k]+tgrid[0][i-1][j][k]-2*tgrid[0][i][j][k]);
 			}
 		    }
@@ -1615,16 +1580,16 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 		for(j=fdmax[1]-1;j>0;j--){
 		    i=fdmax[0];
 		    for(k=fdmax[2]-1;k>0;k--){ // bot & top xz planes
-			tgrid[1][1][j][k]+=melt[1]*k_per_cp*\
+			tgrid[1][1][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[1][j][k][1])*\
 					   revdx2*(tgrid[0][1][j+1][k]+tgrid[0][1][j-1][k]-2*tgrid[0][1][j][k]);
-			tgrid[1][i][j][k]+=melt[1]*k_per_cp*\
+			tgrid[1][i][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*\
 					   revdx2*(tgrid[0][i][j+1][k]+tgrid[0][i][j-1][k]-2*tgrid[0][i][j][k]);
 		    }
 		    k=fdmax[2];
 		    for(i=fdmax[0];i>0;i--){ // bot & top xz planes, including edges
-			tgrid[1][i][j][0]+=melt[1]*k_per_cp*\
+			tgrid[1][i][j][0]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][0][1])*\
 					   revdx2*(tgrid[0][i][j+1][0]+tgrid[0][i][j-1][0]-2*tgrid[0][i][j][0]);
-			tgrid[1][i][j][k]+=melt[1]*k_per_cp*\
+			tgrid[1][i][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*\
 					   revdx2*(tgrid[0][i][j+1][k]+tgrid[0][i][j-1][k]-2*tgrid[0][i][j][k]);
 		    }
 		}
@@ -1633,9 +1598,9 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
  		if(pbc[1]!=0){// Y pbc on
 			for(i=fdmax[0];i>0;i--){ // [i][fdmax][k] = [i][0][k]
 				for(k=fdmax[2];k>=0;k--){
-					tgrid[1][i][0][k]+=melt[1]*k_per_cp*revdx2*\
+					tgrid[1][i][0][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][0][k][1])*revdx2*\
 							  (tgrid[0][i][1][k]+tgrid[0][i][j][k]-2*tgrid[0][i][0][k]);
-					tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+					tgrid[1][i][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 							  (tgrid[0][i][0][k]+tgrid[0][i][j-1][k]-2*tgrid[0][i][j][k]);
 				}
 			}
@@ -1644,21 +1609,21 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 			if(tbc[2][0]==0){ // adiabatic
 			    for(i=fdmax[0];i=0;i--){
 				for(k=fdmax[2];k>=0;k--)
-				  tgrid[1][i][0][k]+=melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][0][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][0][k][1])*revdx2*\
 						    (tgrid[0][i][1][k]-tgrid[0][i][0][k]);
 			    }
 			}else if(tbc[2][0]<0){ // convection
 			    hconv=tbc[2][1]*k_per_cp*melt[1]/(mcdx*melt[3]); // h k dt / (cp dx k) = h dt / (cp dx)
 			    for(i=fdmax[0];i>0;i--){
 				for(k=fdmax[2];k>=0;k--)
-				  tgrid[1][i][0][k]+=melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][0][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][0][k][1])*revdx2*\
 						    (tgrid[0][i][1][k]-tgrid[0][i][0][k])-\
 						    hconv*(tbc[2][0]+tgrid[0][i][0][k]); // - (-Ta+Tnow) = Ta-Tnow
 			    }
 			}else{ // tbc > 0 : heat sink
 			    for(i=fdmax[0];i>0;i--){
 				for(k=fdmax[2];k>=0;k--)
-				  tgrid[1][i][0][k]+=melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][0][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][0][k][1])*revdx2*\
 						    (tgrid[0][i][1][k]+tbc[2][0]-2*tgrid[0][i][0][k]);
 			    }
 			}
@@ -1666,21 +1631,21 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 			if(tbc[3][0]==0){ // adiabatic
 			    for(i=fdmax[0];i>0;i--){
 				for(k=fdmax[2];k>=0;k--)
-				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 						    (tgrid[0][i][j-1][k]-tgrid[0][i][j][k]);
 			    }
 			}else if(tbc[3][0]<0){ // convection
 			    hconv=tbc[3][1]*k_per_cp*melt[1]/(mcdx*melt[3]); // h k dt / (cp dx k) = h dt / (cp dx)
 			    for(i=fdmax[0];i>0;i--){
 				for(k=fdmax[2];k>=0;k--)
-				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 						    (tgrid[0][i][j-1][k]-tgrid[0][i][j][k])-\
 						    hconv*(tbc[3][0]+tgrid[0][i][j][k]); // - (-Ta+Tnow)
 			    }
 			}else{ // tbc > 0 : heat sink
 			    for(i=fdmax[0];i>0;i--){
 				for(k=fdmax[2];k>=0;k--)
-				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 						    (tgrid[0][i][j-1][k]+tbc[3][0]-2*tgrid[0][i][j][k]);
 			    }
 			}
@@ -1689,17 +1654,19 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 // 3. Z direction
 		for(k=fdmax[2]-1;k>0;k--){
 			i=fdmax[0];
+// x=1? x=0?
 			for(j=fdmax[1];j>=0;j--){ // bot & top yz planes
-				tgrid[1][0][j][k]+=melt[1]*k_per_cp*\
-					   revdx2*(tgrid[0][0][j][k+1]+tgrid[0][0][j][k-1]-2*tgrid[0][0][j][k]);
-				tgrid[1][i][j][k]+=melt[1]*k_per_cp*\
+				tgrid[1][1][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[1][j][k][1])*\
+					   revdx2*(tgrid[0][1][j][k+1]+tgrid[0][1][j][k-1]-2*tgrid[0][1][j][k]);
+				tgrid[1][i][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*\
 					   revdx2*(tgrid[0][i][j][k+1]+tgrid[0][i][j][k-1]-2*tgrid[0][i][j][k]);
 			}
 			j=fdmax[1];
-			for(i=fdmax[0]-1;i>1;i--){ // bot & top xz planes
-				tgrid[1][i][0][k]+=melt[1]*k_per_cp*\
+//			for(i=fdmax[0]-1;i>1;i--){ // bot & top xz planes
+			for(i=fdmax[0];i>0;i--){ // bot & top xz planes
+				tgrid[1][i][0][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][0][k][1])*\
 					   revdx2*(tgrid[0][i][0][k+1]+tgrid[0][i][0][k-1]-2*tgrid[0][i][0][k]);
-				tgrid[1][i][j][k]+=melt[1]*k_per_cp*\
+				tgrid[1][i][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*\
 					   revdx2*(tgrid[0][i][j][k+1]+tgrid[0][i][j][k-1]-2*tgrid[0][i][j][k]);
 			}
 		}
@@ -1708,9 +1675,9 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
  		if(pbc[2]!=0){// Z pbc on
 		    for(i=fdmax[0];i>0;i--){
 			for(j=fdmax[1];j>=0;j--){ // [i][k][0] = [i][j][fdmax]
-				tgrid[1][i][j][0]+=melt[1]*k_per_cp*revdx2*\
+				tgrid[1][i][j][0]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][0][1])*revdx2*\
 						  (tgrid[0][i][j][1]+tgrid[0][i][j][k]-2*tgrid[0][i][j][0]);
-				tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+				tgrid[1][i][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 						  (tgrid[0][i][j][0]+tgrid[0][i][j][k-1]-2*tgrid[0][i][j][k]);
 			}
 		    }
@@ -1719,21 +1686,21 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 		    if(tbc[4][0]==0){ // adiabatic
 			for(i=fdmax[0];i>0;i--){
 			    for(j=fdmax[1];j>=0;j--)
-				tgrid[1][i][j][0]+=melt[1]*k_per_cp*revdx2*\
+				tgrid[1][i][j][0]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][0][1])*revdx2*\
 						  (tgrid[0][i][j][1]-tgrid[0][i][j][0]);
 			}
 		    }else if(tbc[4][0]<0){ // convection
 			hconv=tbc[4][1]*k_per_cp*melt[1]/(mcdx*melt[3]); // h k dt / (cp dx k) = h dt / (cp dx)
 			for(i=fdmax[0];i>0;i--){
 			    for(j=fdmax[1];j>=0;j--)
-				tgrid[1][i][j][0]+=melt[1]*k_per_cp*revdx2*\
+				tgrid[1][i][j][0]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][0][1])*revdx2*\
 						   (tgrid[0][i][j][1]-tgrid[0][i][j][0])-\
 						    hconv*(tbc[4][0]+tgrid[0][i][j][0]); // - (-Ta+Tnow) = Ta-Tnow
 			}
 		    }else{ // tbc > 0 : heat sink
 			for(i=fdmax[0];i>0;i--){
 			    for(j=fdmax[1];j>=0;j--)
-				  tgrid[1][i][j][0]+=melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][j][0]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][0][1])*revdx2*\
 						    (tgrid[0][i][j][1]+tbc[4][0]-2*tgrid[0][i][j][0]);
 			}
 		    }
@@ -1741,21 +1708,21 @@ void heat_transfer_MPI(double**** tgrid,double tbc[][2],int mpidir[],int dir[],i
 		    if(tbc[5][0]==0){ // adiabatic
 			for(i=fdmax[0];i>0;i--){
 			    for(j=fdmax[1];j>=0;j--)
-				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 						    (tgrid[0][i][j][k-1]-tgrid[0][i][j][k]);
 			}
 		    }else if(tbc[5][0]<0){ // convection
 			hconv=tbc[5][1]*k_per_cp*melt[1]/(mcdx*melt[3]); // h k dt / (cp dx k) = h dt / (cp dx)
 			for(i=fdmax[0];i>0;i--){
 			    for(j=fdmax[1];j>=0;j--)
-				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 						    (tgrid[0][i][j][k-1]-tgrid[0][i][j][k])-\
 						    hconv*(tbc[5][0]+tgrid[0][i][j][k]); // - (-Ta+Tnow)
 			}
 		    }else{ // tbc > 0 : heat sink
 			for(i=fdmax[0];i>0;i--){
 			    for(j=fdmax[1];j>=0;j--)
-				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*revdx2*\
+				  tgrid[1][i][j][k]+=melt[1]*k_per_cp*powcon(melt[9],grid[i][j][k][1])*revdx2*\
 						    (tgrid[0][i][j][k-1]+tbc[5][0]-2*tgrid[0][i][j][k]);
 			}
 		    }

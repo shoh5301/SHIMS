@@ -19,10 +19,10 @@ void DB_example(){
 
 	db=fopen("example.sdb","w");
 	fprintf(db,"\
-#NAME  Tliq  Tsol  GBEmax Aniso   Qmob    K0_e    K0_MC  beta_SL  dHfus  Vm_solid E_IFsl E_IFsv E_IFlv k_heat Cp(at_mp) IFE_aniso T0\n\
+#NAME  Tliq  Tsol  GBEmax Aniso   Qmob    K0_e    K0_MC  beta_SL  dHfus  Vm_solid E_IFsl E_IFsv E_IFlv k_heat Cp(at_mp) IFE_aniso\n\
 FDMON      1    1   1.00     15      1       1     1E12        1      1     1E-6      1      1      1   500   30        1.0\n\
 fccNi   1728 1728  1.732     15 295140 0.05319  3925335   3.0E-3  17160  6.99E-6  0.356  2.104  1.750  88.5   38.14     0.2\n\
-Al4Cu    923  845   0.65     15  98220 1.63E-5  11627.6   5.0E-2  10770  9.77E-6  0.154  1.032  0.865   238   37.112    0.2       903\n\
+Al4Cu    923  845   0.65     15  98220 1.63E-5  11627.6   5.0E-2  10770  9.77E-6  0.154  1.032  0.865   238   37.112    0.2\n\
 EOF\n\
 T(K) GBEmax(J/m2) Aniso(degree) Q(J/mol) D0(m2/s) K0_e(m2/s) K0_MC (site2/s) dHfus(J/mol) Vm (m3/mol-atom) E_IF(J/m2) k_heat (W/m K) Cp (J/K-mol)\n");
 	fclose(db);
@@ -189,14 +189,14 @@ void arrange_var(char buffer[],double melt[],double jc[],double rscale[]){
 	melt[4]=atof(temp); //Cp (heat capacity) J / mol
 	tok(buffer,temp);
 	jc[2]=atof(temp); //Growth direction anisotropy
-	if(rscale[2]!=melt[0]){
-	    tok(buffer,temp);
-	    melt[8]=atof(temp);
+	if(rscale[2]!=melt[0]){ // T0 temperature
+//	    tok(buffer,temp);
+//	    melt[8]=atof(temp);
+	    melt[8]=(rscale[2]+melt[0])/2;
 	}else
 	    melt[8]=rscale[2];
-
-	if(melt[8]==0)
-	    printf(" @@@ WARNING: Wrong T0 value! // NOTE: T0 would be T_sol < T0 < T_liq @@@\n");
+//	if(melt[8]==0)
+//	    printf(" @@@ WARNING: Wrong T0 value! // NOTE: T0 would be T_sol < T0 < T_liq @@@\n");
 
 	return;
 }
