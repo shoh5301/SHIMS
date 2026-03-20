@@ -7,12 +7,12 @@
 #include "Utility.h"
 #include "Calc.h"
 
-int ver=174;
+int ver=176;
 int n_size;
 int n_rank;
 
-int**** init_setting(int**** grid,double jc[],int dir[],int out[],char ttem[],double melt[],int pbc[],double rscale[],double tbc[][2],double am[]); // initial setting
-int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc[],double rscale[],double tbc[][2],char str[],double am[]); // input file reading
+int**** init_setting(int**** grid,double jc[],int dir[],int out[],char ttem[],double melt[],int pbc[],double rscale[],double tbc[][2],double am[],char dfeq[]); // initial setting
+int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc[],double rscale[],double tbc[][2],char str[],double am[],char dfeq[]); // input file reading
 int set_bc(FILE *incar,int pbc[],double tbc[][2],double mode);
 int set_wetting(FILE *incar,double* angle,char word[],double mode);
 int is_valid_digits(const char *str);
@@ -26,42 +26,8 @@ int main(int argc,char** argv){
 	MPI_Comm_size(MPI_COMM_WORLD,&n_size);
 
 	int pbc[3]={0},out[8]={0},dir[3]={0},i,j=1;
-// dir 0 1 2 for MC (x y z length) // 3 4 5 for FDM (x y z number of grids) in previous version
-// out 0 = total -> real total, 1 = step to print map 2 = AGI lines 3 = criteria for ending simul. (sec = 1 vs MCS = 0), 4 = step to print data
-//     5 = Timestep Acceleartion scheme (0, 1, 2), 6 = step to do active dt setting, 7 = Liquid fraction criteria? (1 == Yes // 0 == No)
-	char func,ttem[100]={'\0'};
-	double sang[11]={0},tbc[6][2]={0},jc[9]={0},melt[9]={0},rscale[15]={0},am[11]={0};
-	// am 0 = Melt pool mode (-1 = Circle, 0 = TEARDROP,  1 = Gaussian) 
-	// 1 = Melt pool direction (negative -> X, positive -> Y)
-	// Start position (x = 6, y = 7), 8 = scan speed
-	// when am[0]==-1: 2 = Radius                      4 = Depth                                9 = Boundary Temperature // 11 = gradient in MP
-	// when am[0]==0:  2 = Width  3 = Cap+Tail length  4 = Depth  5 = Geometry (Teardrop shape) 9 = Boundary Temperature
-	// when am[0]==1:  2 = SX     3 = SY               4 = SZ    5 = POW  9 = ABS    (Gaussian)
-	// jc 0=EMPTY // 1 = GBEmax // 2 = IFE_aniso factor // 3=C(low angle boundary,degree) // 4=solid/liquid interface energy(J/m2) // 5=solid-vapor IFE (J/m2) // 6=liquid-vapor IFE 
-	// 			// 7 = particle volume fraction in liquid, 8 = wetting angle // 9 =temp (empty) for dendr. dir.
-	// ttem: (time range 1) (t expression) (time range 2) (t expression) ...
-	// melt 0 = T_solidus, 8 = T0,  1 = dt for FDM in SOL module // accel. factor in GG module
-	//      2 = heat transfer mode (0 = excluded // T = included (T=initial temperature, T>0) // <0 = load T profile)
-	// (for FDM mode)     3 = thermal conductivity (k)  4 = Cp  5 = Tboil, 6 = latent heat retroactive portion; dt_fdm / (dx2/alpha) * dHfus
-	//		      7 = Acceleration factor for FDM (integer)
-	// (for FTC approx)   3 = T* at IF 4 = -(G K/voxel)
-	// tbc [xyz][] 0 = x, lower  1 = x, upper  2 = y, lower  3 = y, upper  4 = z, lower  5 = z, upper
-	// tbc [][0]  0 is for adiabatic, negative number for convection (= -T_surr), positive number for heat sink (=T_surr)
-	// tbc [][1]  (for convection) h (for adiabatic or heat sink) wetting angle (0 < theta < 180, degree)
-	// rscale 0 = does it do real scale conversion? (1 to yes, 2 to AM module)
-	//	L = Lamda L_MC
-	// 	  1 = Lamda
-	//	P = exp (- dx2 gamma/kT) exp (- Qmob/R (1/T-1/Tm))
-	//	  2 = T_liquidus  3 = Qmob
-	//	t= Lamda^2 KMC/Ke tMCS
-	// 	  4 = Qsol_diffu  5 = K0_e  6 = Qliq_diffu  7 = K0_mc
-	// 	Solidification & melting
-	// 	  8 = dH_fus  9 = Vm 
-	// 	  10 = KMC_solidi/Ke_solidi; time conversion factor for solidification / melting
-	// 	  11 = Nucleation mode (1 == On)
-	// 	  12 = Maximum timestep length for acceleration
-	// 	  13 = Maximum timestep scaling factor for acceleration
-	// 	  14 = Critical supercooling to consider solidification
+	char func,ttem[100]={'\0'},dfeq[100]={'\0'};
+	double sang[11]={0},tbc[6][2]={0},jc[9]={0},melt[10]={0},rscale[15]={0},am[11]={0};
 	int**** grid=NULL;
 
     if(n_rank==0){
@@ -95,10 +61,15 @@ int main(int argc,char** argv){
 			if(n_size==1)
 				return 0;
 		}else if(func=='2' || func=='s'){
-			grid=init_setting(grid,jc,dir,out,ttem,melt,pbc,rscale,tbc,am);
+			grid=init_setting(grid,jc,dir,out,ttem,melt,pbc,rscale,tbc,am,dfeq);
 			if(grid==NULL){
 				printf(" Simulation aborted...\n");
-				return 0;
+				if(n_size>1){
+					MPI_Finalize();
+				    func='0';
+				}else
+				    return 0;
+//				    return 0;
 			}
 		}else
 			printf("Wrong input...\n");
@@ -111,16 +82,19 @@ int main(int argc,char** argv){
 		MPI_Bcast(out,7,MPI_INT,0,MPI_COMM_WORLD);
 		MPI_Bcast(jc,9,MPI_DOUBLE,0,MPI_COMM_WORLD);
 		MPI_Bcast(rscale,15,MPI_DOUBLE,0,MPI_COMM_WORLD);
-		MPI_Bcast(melt,9,MPI_DOUBLE,0,MPI_COMM_WORLD);
+		MPI_Bcast(melt,10,MPI_DOUBLE,0,MPI_COMM_WORLD);
 		MPI_Bcast(am,11,MPI_DOUBLE,0,MPI_COMM_WORLD);
 		MPI_Bcast(ttem,100,MPI_CHAR,0,MPI_COMM_WORLD);
+		MPI_Bcast(dfeq,100,MPI_CHAR,0,MPI_COMM_WORLD);
 		MPI_Bcast(&func,1,MPI_CHAR,0,MPI_COMM_WORLD);
 		for(i=0;i<6;i++){
 		    MPI_Bcast(&(tbc[i][0]),1,MPI_DOUBLE,0,MPI_COMM_WORLD);
 		    MPI_Bcast(&(tbc[i][1]),1,MPI_DOUBLE,0,MPI_COMM_WORLD);
 		}
-		if(func=='0' || func=='q')
+		if(func=='0' || func=='q'){
+			MPI_Finalize();
 			return n_rank;
+		}
 	    }
 	    if((func=='2' || func=='s')){ // to avoid MPI issue
 	      if(n_size==1){
@@ -129,10 +103,10 @@ int main(int argc,char** argv){
 			GGmodule(grid,jc,dir,out,ttem,melt,pbc,sang,rscale,tbc); //MC simulation without FDM
 			break;
 		    case 1:
-			SOLmodule(grid,jc,dir,out,melt,pbc,rscale,tbc);	//MC simulation with FDM
+			SOLmodule(grid,jc,dir,out,melt,pbc,rscale,tbc,dfeq);	//MC simulation with FDM
 			break;
 		    case 2:
-			AMmodule(grid,jc,dir,out,melt,pbc,rscale,tbc,am);	//AM simulation
+			AMmodule(grid,jc,dir,out,melt,pbc,rscale,tbc,am,dfeq);	//AM simulation
 			break;
 		    case 3: // GG sim, with realistic scale
 			GGmodule(grid,jc,dir,out,ttem,melt,pbc,sang,rscale,tbc); //MC simulation without FDM
@@ -147,10 +121,10 @@ int main(int argc,char** argv){
 			GGmodule_MPI(grid,jc,dir,out,ttem,melt,pbc,sang,rscale,tbc); //MC simulation without FDM
 			break;
 		    case 1:
-			SOLmodule_MPI(grid,jc,dir,out,melt,pbc,rscale,tbc);	//MC simulation with FDM
+			SOLmodule_MPI(grid,jc,dir,out,melt,pbc,rscale,tbc,dfeq);	//MC simulation with FDM
 			break;
 		    case 2:
-			AMmodule_MPI(grid,jc,dir,out,melt,pbc,rscale,tbc,am);	//AM simulation
+			AMmodule_MPI(grid,jc,dir,out,melt,pbc,rscale,tbc,am,dfeq);	//AM simulation
 			break;
 		    case 3: // GG sim, with realistic scale
 			GGmodule_MPI(grid,jc,dir,out,ttem,melt,pbc,sang,rscale,tbc); //MC simulation without FDM
@@ -179,6 +153,10 @@ int main(int argc,char** argv){
 		}
 		out[4]=0;
 		for(i=0;i<100;i++){
+			if(dfeq[i]=='\0')
+				break;
+			dfeq[i]='\0';
+		}		for(i=0;i<100;i++){
 			if(ttem[i]=='\0')
 				break;
 			ttem[i]='\0';
@@ -205,12 +183,12 @@ int main(int argc,char** argv){
 	return 0;
 }
 
-int**** init_setting(int**** grid,double jc[],int dir[],int out[],char ttem[],double melt[],int pbc[],double rscale[],double tbc[][2],double am[]){ // initial setting
+int**** init_setting(int**** grid,double jc[],int dir[],int out[],char ttem[],double melt[],int pbc[],double rscale[],double tbc[][2],double am[],char dfeq[]){ // initial setting
 	char temp[100],ri[100];
 	int i;
 
 	printf("\n");
-	if(read_incar(jc,dir,out,ttem,melt,pbc,rscale,tbc,ri,am)!=0)
+	if(read_incar(jc,dir,out,ttem,melt,pbc,rscale,tbc,ri,am,dfeq)!=0)
 		return NULL;
 
 	puts(" # Initial setting input is completed! #");
@@ -233,9 +211,11 @@ int**** init_setting(int**** grid,double jc[],int dir[],int out[],char ttem[],do
 	return grid;
 }
 
-int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc[],double rscale[],double tbc[][2],char str[],double am[]){ // input file reading
+
+int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc[],double rscale[],double tbc[][2],char str[],double am[],char dfeq[]){ // input file reading
 	int i=0,j,k;
 	char temp[100],temp2[500],option[100];
+	double Tmax[2];
 	FILE* incar=NULL;
 
 	incar=fopen(INCAR,"r");  // Input log file
@@ -259,7 +239,7 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 		fclose(incar);
 		return 1;
 	}
-	if(option[0]=='C' || option[0]=='c' || option[0]=='S' || option[0]=='s') // SOL module
+	if(option[0]=='C' || option[0]=='c') // SOL module
 		rscale[0]=1;
 	else if(option[0]=='A' || option[0]=='a') // AM module
 		rscale[0]=2;
@@ -525,18 +505,30 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 		fclose(incar);
 		return 1;
 	    }
-/*		if(find_keyword(incar,"FACL",option)!=0) // ==0 when there is no error
-		    melt[7]=1;
-		else{
-		    melt[7]=atof(option);
-		    if(melt[7]!=floor(melt[7])){
-			printf(" INPUT ERROR for 'FACL' option... \n");
-			fclose(incar);
-			return 1;
-		    }
-		}*/
 	    melt[7]=1;
 
+	    if(find_keyword(incar,"DFeq",option)!=0){ // ==0 when there is no error
+// Default: dHfus (1-T/Tm)
+		printf(" ### Default option is activated for DFeq ###\n");
+		strcpy(dfeq,"d");
+	    }else{
+		tok(option,temp);
+		sprintf(option,"(%s)/(%E)",temp,rscale[9]);
+	    }
+
+	    Tmax[0]=rscale[2]; //Tl
+	    Tmax[1]=Tmax[0]-rscale[14]; // Critical supercooling
+	    Tmax[2]=rscale[2]-melt[0]; // freezing range
+	    if(dfeq[0]!='d'){
+		Etodec(temp);
+		change_postfix(temp,dfeq);
+//printf("prefix eq %s postifx eq %s\n",temp,dfeq);
+		if(strcmp(option,"0")==0 ||(Xl_df(dfeq,100,rscale[8]/rscale[9],Tmax,melt[8])==0&&Xl_df(dfeq,1000,rscale[8]/rscale[9],Tmax,melt[8])==0)){
+		    printf(" ### WRONG EQUATION FOR DRIVING FORCE: Default option is activated for DFeq ###\n");
+		    strcpy(dfeq,"d");
+		}else
+		    printf("DFeq test: %E J/m3 at 1/2 T0\n",Xl_df(dfeq,0.5*melt[8],0,NULL,0));
+	    }
 // NUCLEATION option ON or OFF
 	    if(find_keyword(incar,"NUCL",option)!=0) // ==0 when there is no error
 		rscale[11]=1;
@@ -864,11 +856,11 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 		    }
 		}
 		if(find_keyword(incar,"GMP",option)!=0) // ==0 when there is no error
-		    am[10]=0; // default value == Tm
+		    am[10]=0; // default value == isothermal
 		else{
 		    tok(option,temp);
 		    if(is_valid_digits(temp))
-			am[10]=atof(temp);
+			am[10]=atof(temp)/rscale[1]; // K / m -> K / voxel
 		    else{
 			printf(" INPUT ERROR for 'GMP' option...\n");
 			fclose(incar);
@@ -963,6 +955,18 @@ int read_incar(double jc[],int dir[],int out[],char ttem[],double melt[],int pbc
 			jc[8]=atof(temp);
 		    else{
 			printf(" INPUT ERROR for 'PANG' option...\n");
+			fclose(incar);
+			return 1;
+		    }
+	    }
+	    if(find_keyword(incar,"kPD",option)!=0) // ==0 when there is no error
+		    melt[9]=1.0;
+	    else{
+		    tok(option,temp);
+		    if(is_valid_digits(temp))
+			melt[9]=atof(temp);
+		    else{
+			printf(" INPUT ERROR for 'kPD' option...\n");
 			fclose(incar);
 			return 1;
 		    }
@@ -1394,7 +1398,7 @@ void example_incar(){ // Create example INCAR file
 	FILE *incar;
 
 	incar=fopen("example.in","w");
-	fprintf(incar,"\n\
+	fprintf(incar,"\
 ##################################################################################################\n\
 # SHIMS INCAR FORMAT\n\
 # YES = Y, NO = N\n\
@@ -1411,8 +1415,7 @@ void example_incar(){ // Create example INCAR file
 # MODE:  SIMULATION TYPE\n\
 #        (GG   = Grain Growth without FDM\n\
 #         CONV = Conventional processes\n\
-#         AM   = Additive manufacturing\n\
-#         SB   = Shear band heating in amorphous alloy)\n\
+#         AM   = additive manufacturing)\n\
 # REAL:  REALISTIC TIME ASSIGNMENT\n\
 # FDM :  CONSIDER HEAT TRANSFER?\n\
 #        (FDM = Y TO SOLVE HEAT TRANSFER EQUATION USING FDM)\n\
@@ -1521,7 +1524,12 @@ TZU  = 800.0\n\
 # tSCA: MAXIMUM SCALING FACTOR TO INCREASE TIMESTEP LENGTH FOR 1 MCS\n\
 #       (NOTE: input 0 to make it unlimited // elsewise, tSCA must be >=1...)\n\
 #        ex) t_now/t_prev <= tSCA\n\
-#\n\
+# DFeq:  FUNCTION FOR CHEMICAL DRIVING FORCE, unit J/mol\n\
+#        (UNIT: K, T FOR TEMPERATURE // !!! NO SPACE DURING WRITING THE EQUATION !!!)\n\
+#        ex) 11480*(1-T/1728)\n\
+#	 DO NOT ACTIVATE (JUST COMMENT OUT w/ # tag) to activate the DEFAULT option\n\
+#	 (DEFAULT: dH_fus*(1-T/T0) assumption; see [Oh & Lee, Nat. Comm. 2026])\n\
+##\n\
 TCS  = 0 K\n\
 LAT  = Y\n\
 NUCL = Y\n\
@@ -1533,6 +1541,7 @@ TIME = 3\n\
 OPT  = 10\n\
 tMAX = 1E-3 sec\n\
 tSCA = 1E2\n\
+#DFeq = 0.00E-0*(1-T/1.0)\n\
 ##################################################################################################\n\
 # AMCARD (ONLY AVAILABLE WHEN REAL = Y AND MODE = AM)\n\
 #\n\
@@ -1543,11 +1552,12 @@ tSCA = 1E2\n\
 # MMOD: Melt pool mode\n\
 #      (CIRCLE = Circular shape melt pool assumption, TEAR = teardrop shape melt pool assumption, GAUS = Gaussian LASER simulation)\n\
 #       NOTE: NO PBC FOR MELT POOL...\n\
+# kPD:  Relative thermal conductivity of powder domain compared to condensed solid/liquid domain\n\
 ### Below options are for MMOD = CIRCLE ###\n\
 # RAD:  Initial melt pool radius (unit voxel)\n\
 # DEP:  Maximum depth of melt pool (unit voxel, default = RAD)\n\
 # TMP:  Melt pool boundary temperature (unit K, default = Tm)\n\
-# GMP:  T gradient within the melt pool (unit K/voxel)\n\
+# GMP:  T gradient within the melt poo (unit K/m)\n\
 ### Below options are for MMOD = TEAR ###\n\
 # WID:  Initial melt pool width (unit voxel)\n\
 # CTL:  Initial melt pool cap+tail length (unit voxel)\n\
@@ -1567,7 +1577,8 @@ POS  = 20 20\n\
 VEL = 500E-3 m/s\n\
 MMOD = TEAR\n\
 #TMP  = 2000 K\n\
-GMP = 10\n\
+GMP = 1\n\
+kPD = 0.1\n\
 #RAD  = 20 vox\n\
 DEP  = 5  vox\n\
 GEO  = 1.0\n\
@@ -1578,8 +1589,6 @@ SX   = 100E-6 m\n\
 SY   = 100E-6 m\n\
 POW  = 400 W\n\
 ABS  = 0.25\n\
-##################################################################################################\n\
-# SBCARD (ONLY AVAILABLE WHEN MODE = SB)\n\
 #EOF\n");
 	fclose(incar);
 	return;
@@ -1598,14 +1607,14 @@ void input_log(int dir[],int pbc[],int out[],char ttem[],double melt[],double jc
 	    fprintf(log,"Total %d MCS\n",out[0]);
 	else
 	    fprintf(log,"Total %.3f sec\n",(float)out[0]/1000);
-	fprintf(log,"\n=========== 1. Grain Growth =========================================");
+	fprintf(log,"\n=========== 1. Grain Growth ==========================================================");
 	fprintf(log,"\n      γGB (Max) = %.2f J/m2  where θcoh ≤%.1f'",jc[1],jc[3]);
 	fprintf(log,"\n      Q GB = %.1f J/mol, Tmax = %.f K\n",rscale[3],rscale[2]);
 	fprintf(log,"\n                  2     K0MC = %.2E unit2/MCS",rscale[7]);
 	fprintf(log,"\n      t (sec) = dx  * -------------------------- * tMC (MCS)");
 	fprintf(log,"\n                        K0_e = %.2E m2/sec",rscale[5]);
-	fprintf(log,"\n                =  %E sec / MCS * tMC(MCS)\n",rscale[7]/rscale[5]*rscale[1]*rscale[1]);
-	fprintf(log,"\n=========== 2. Solid-Liquid =========================================");
+	fprintf(log,"\n              =  %E sec / MCS * tMC(MCS)\n",rscale[7]/rscale[5]*rscale[1]*rscale[1]);
+	fprintf(log,"\n=========== 2. Solid-Liquid ==========================================================");
 	fprintf(log,"\n                              /");
 	fprintf(log,"\n                     L       /");
 	fprintf(log,"\n                            / γlv = %.2f J/m2",jc[6]);
@@ -1618,9 +1627,10 @@ void input_log(int dir[],int pbc[],int out[],char ttem[],double melt[],double jc
 	fprintf(log,"\n      T_liq = %.f K, T_sol = %.f K, T* (= T_liq - Tcs) = %.2f K",rscale[2],melt[0],rscale[2]-rscale[14]);
 	fprintf(log,"\n                        Ks_MC");
 	fprintf(log,"\n      t (sec) = dx  * ------- ( = %.2E s unit/m MCS) * tMC (MCS)",rscale[10]);
-	fprintf(log,"\n                        Ks_e\n");
+	fprintf(log,"\n                        Ks_e");
+	fprintf(log,"\n              = %.2E s / MCS * tMC (MCS)\n",rscale[10]*rscale[1]);
 	fprintf(log,"\n      Maximum time acceleration: t < %E sec && f_scale < %E\n",rscale[12],rscale[13]);
-	fprintf(log,"\n=========== 3. Temperature Condition ================================");
+	fprintf(log,"\n=========== 3. Temperature Condition =================================================");
 	fprintf(log,"\n   Thermal conductivity k = %.1f W/m K",melt[3]);
 	fprintf(log,"\n   Heat capacity Cp = %.3f J/K-mol\n",melt[4]);
 	sprintf(ttem2,"%s",ttem);
